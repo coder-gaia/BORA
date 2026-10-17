@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: bora-api
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/bora}
+    username: ${SPRING_DATASOURCE_USERNAME:bora}
+    password: ${SPRING_DATASOURCE_PASSWORD:bora_dev}
+    hikari:
+      connection-timeout: 5000
+      maximum-pool-size: 5
+  flyway:
+    clean-disabled: true
+    validate-on-migrate: true
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: 8080
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-components: always
+      show-details: never
+      group:
+        readiness:
+          include: readinessState,db
+        liveness:
+          include: livenessState
