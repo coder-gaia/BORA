@@ -1,0 +1,17 @@
+# Dependências e saídas de build
+node_modules/
+target/
+dist/
+coverage/
+playwright-report/
+test-results/
+
+# Configuração local e segredos
+.env
+.env.*
+!.env.example
+*.log
+
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
