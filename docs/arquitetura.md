@@ -35,3 +35,21 @@ Na implantação planejada, duas APIs compartilharão uma VM e um banco. Essa co
 exercitar concorrência e atualizações graduais, mas a VM continua sendo um ponto único de falha.
 Consumo de memória, latência, fluidez do mapa e comportamento durante atualizações serão medidos
 com os cenários e as condições de teste registrados na documentação.
+
+## Publicação
+
+O ambiente de produção serve a web compilada pelo Caddy. Somente o proxy publica portas na VM;
+as APIs compartilham uma rede com ele e outra com o banco, que não possui porta pública.
+
+```mermaid
+flowchart LR
+  Browser[Navegador] -->|HTTPS| Caddy[Caddy e arquivos estáticos]
+  Caddy --> API1[API 1]
+  Caddy --> API2[API 2]
+  API1 --> DB[(PostgreSQL e PostGIS)]
+  API2 --> DB
+```
+
+A troca de APIs acontece uma instância por vez, com drenagem e readiness. A web usa ativação
+atômica de arquivos e preserva assets anteriores. O fluxo e os limites dessa recuperação estão
+no [guia de publicação](deploy.md) e na [decisão de publicação gradual](decisoes/0002-publicacao-gradual.md).

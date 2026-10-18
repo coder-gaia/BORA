@@ -1,0 +1,16 @@
+FROM node:24.22.0-bookworm-slim AS build
+
+WORKDIR /app
+COPY apps/web/package.json apps/web/package-lock.json ./
+RUN npm ci
+COPY apps/web/ ./
+RUN npm run build
+
+FROM caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f AS assets
+
+COPY --from=build /app/dist /app/dist
+COPY infra/caddy/export-web.sh /usr/local/bin/bora-export-web
+RUN chmod +x /usr/local/bin/bora-export-web
+
+ENTRYPOINT ["/usr/local/bin/bora-export-web"]
+CMD ["stage"]

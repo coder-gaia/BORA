@@ -111,3 +111,39 @@ jobs:
               AND ST_DWithin(ST_SetSRID(ST_MakePoint(-46.64, -23.55), 4326)::geography, \
                 ST_SetSRID(ST_MakePoint(-46.6401, -23.5501), 4326)::geography, 100)")
           test "$result" = t
+
+  deploy-tests:
+    name: Atualização gradual e recuperação
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Construir a API para o teste
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          load: true
+          tags: bora-dev-api:latest
+          cache-from: type=gha,scope=bora-api-amd64
+          cache-to: type=gha,mode=max,scope=bora-api-amd64
+      - name: Construir os arquivos da web
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: apps/web/Dockerfile.prod
+          load: true
+          tags: bora-web:m01-assets
+          cache-from: type=gha,scope=bora-web-amd64
+          cache-to: type=gha,mode=max,scope=bora-web-amd64
+      - name: Construir o banco para o teste
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: infra/postgres
+          file: infra/postgres/Dockerfile
+          load: true
+          tags: bora-postgis:18.6-3.6.4
+          cache-from: type=gha,scope=bora-postgis-amd64
+          cache-to: type=gha,mode=max,scope=bora-postgis-amd64
+      - name: Testar publicação, falha e recuperação com HTTP contínuo
+        run: bash infra/deploy/test.sh

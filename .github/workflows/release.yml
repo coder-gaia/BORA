@@ -1,0 +1,175 @@
+name: Publicação
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: bora-production
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Conferir a versão aprovada
+    if: >-
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository) ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prefix: ${{ steps.version.outputs.prefix }}
+      current: ${{ steps.version.outputs.current }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - name: Confirmar commit atual e CI
+        id: version
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          current=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [[ "$current" != "$RELEASE_SHA" ]]; then
+            echo 'A main avançou. Esta versão não será publicada.'
+            echo 'current=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            curl --fail --silent --show-error --retry 3 \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header 'Accept: application/vnd.github+json' \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$RELEASE_SHA&event=push&per_page=100" \
+              | python3 -c 'import json, sys; runs = [run for run in json.load(sys.stdin)["workflow_runs"] if run["name"] == "CI"]; sys.exit(0 if runs and runs[0]["status"] == "completed" and runs[0]["conclusion"] == "success" else "O commit atual precisa de CI aprovado.")'
+          fi
+          {
+            echo "version=$RELEASE_SHA"
+            echo "prefix=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/bora"
+            echo 'current=true'
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Imagem ${{ matrix.image }} (arm64)
+    needs: prepare
+    if: needs.prepare.outputs.current == 'true'
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: api
+            context: .
+            file: apps/api/Dockerfile
+          - image: web
+            context: .
+            file: apps/web/Dockerfile.prod
+          - image: postgis
+            context: infra/postgres
+            file: infra/postgres/Dockerfile
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare.outputs.version }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Autenticar no GHCR
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          platforms: linux/arm64
+          push: true
+          tags: ${{ needs.prepare.outputs.prefix }}-${{ matrix.image }}:${{ needs.prepare.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.version }}
+          cache-from: type=gha,scope=bora-${{ matrix.image }}-arm64
+          cache-to: type=gha,mode=max,scope=bora-${{ matrix.image }}-arm64
+
+  deploy:
+    name: Atualizar produção
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    environment:
+      name: production
+      url: https://bora.alexandregaia.me
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare.outputs.version }}
+          persist-credentials: false
+      - name: Transferir bundle e implantar
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ needs.prepare.outputs.version }}
+          DEPLOY_HOST: ${{ secrets.BORA_SSH_HOST }}
+          DEPLOY_KEY: ${{ secrets.BORA_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.BORA_SSH_KNOWN_HOSTS }}
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          username_pattern='^[a-zA-Z0-9_-]+(\[bot\])?$'
+          [[ "$GHCR_USERNAME" =~ $username_pattern ]]
+          if [[ -z "$DEPLOY_HOST" || -z "$DEPLOY_KEY" || -z "$DEPLOY_KNOWN_HOSTS" ]]; then
+            echo 'Configure BORA_SSH_HOST, BORA_SSH_KEY e BORA_SSH_KNOWN_HOSTS antes de publicar.' >&2
+            exit 1
+          fi
+          current=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [[ "$current" != "$RELEASE_SHA" ]]; then
+            echo 'A main avançou durante o build. A versão anterior não será implantada.'
+            exit 0
+          fi
+          umask 077
+          known_hosts=$(mktemp "$RUNNER_TEMP/bora-known-hosts.XXXXXX")
+          archive="$RUNNER_TEMP/bora-$RELEASE_SHA.tar.gz"
+          eval "$(ssh-agent -s)" >/dev/null
+          cleanup() {
+            ssh-agent -k >/dev/null
+            rm -f -- "$known_hosts" "$archive"
+          }
+          trap cleanup EXIT
+          printf '%s\n' "$DEPLOY_KEY" | tr -d '\r' | ssh-add -
+          unset DEPLOY_KEY
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$known_hosts"
+          ssh_options=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts" -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+          target="deploy@$DEPLOY_HOST"
+          remote="/opt/bora/releases/$RELEASE_SHA"
+          tar -czf "$archive" infra/deploy infra/compose/compose.prod.yml infra/caddy
+          # O caminho remoto usa somente o SHA validado acima.
+          # shellcheck disable=SC2029
+          ssh "${ssh_options[@]}" "$target" "install -d -m 0750 '$remote'"
+          scp "${ssh_options[@]}" "$archive" "$target:$remote/bundle.tar.gz"
+          # A expansão local do caminho validado é intencional.
+          # shellcheck disable=SC2029
+          ssh "${ssh_options[@]}" "$target" \
+            "tar --no-same-owner --no-same-permissions -xzf '$remote/bundle.tar.gz' -C '$remote'"
+          # Usuário e caminho foram validados; o token segue apenas pela entrada padrão.
+          # shellcheck disable=SC2029
+          printf '%s\n' "$GHCR_TOKEN" | ssh "${ssh_options[@]}" "$target" \
+            "env BORA_ROOT=/opt/bora GHCR_USERNAME='$GHCR_USERNAME' bash '$remote/infra/deploy/deploy.sh' '$RELEASE_SHA'"

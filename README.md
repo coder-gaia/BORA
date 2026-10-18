@@ -105,9 +105,10 @@ O `verify` inclui formatação Java, compilação e integração com PostgreSQL 
 Os testes de integração falham quando Docker não está disponível. Para corrigir formatação,
 use `node scripts/format.mjs --write` e `./mvnw spotless:apply` (ou `.\mvnw.cmd` no PowerShell).
 
-O CI executa regras, formatação, lint, tipos, build, integração e a construção da imagem PostGIS
-em runners amd64 e arm64. A documentação de [desenvolvimento](docs/desenvolvimento.md) explica
-as verificações e a organização do código.
+O CI executa regras, formatação, lint, tipos, build, integração, atualização gradual e recuperação
+de uma versão inválida. A imagem PostGIS também é verificada em runners amd64 e arm64.
+A documentação de [desenvolvimento](docs/desenvolvimento.md) explica as verificações e a
+organização do código.
 
 ## Stack
 
@@ -145,3 +146,19 @@ scripts/        regras, formatação e instalação do hook local
 ```
 
 Veja a [arquitetura](docs/arquitetura.md) e as [decisões técnicas](docs/decisoes/0001-fundacao.md).
+
+## Publicação
+
+O [guia de publicação](docs/deploy.md) descreve a preparação da VM, o domínio, os secrets do
+GitHub e a atualização gradual das duas APIs. A web é compilada em arquivos estáticos;
+o Caddy permanece em execução durante a publicação e preserva os assets de páginas já abertas.
+
+Para exercitar atualização e recuperação localmente, siga o teste integrado do guia.
+Para medir uma origem já disponível sob requisições contínuas:
+
+```sh
+node scripts/check-http-continuity.mjs --url http://localhost:18080 --duration 60
+```
+
+O relatório informa sucessos, falhas e latência p95. A verificação exige HTTP 200 na página
+e readiness com estado `UP`; qualquer falha resulta em código de saída diferente de zero.

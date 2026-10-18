@@ -1,0 +1,160 @@
+name: ${BORA_PROJECT:-bora-prod}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
+x-api: &api
+  restart: unless-stopped
+  environment:
+    SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:?Defina POSTGRES_DB.}
+    SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:?Defina POSTGRES_USER.}
+    SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD.}
+    SERVER_FORWARD_HEADERS_STRATEGY: framework
+    SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: 30s
+    MANAGEMENT_ENDPOINT_HEALTH_SHOW_COMPONENTS: always
+    MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: never
+  depends_on:
+    db:
+      condition: service_healthy
+  healthcheck:
+    test:
+      - CMD
+      - curl
+      - --fail
+      - --silent
+      - http://localhost:8080/actuator/health/readiness
+    interval: 2s
+    timeout: 5s
+    retries: 30
+    start_period: 30s
+  stop_grace_period: 45s
+  mem_limit: 1536m
+  read_only: true
+  tmpfs:
+    - /tmp:size=128m,mode=1777
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  networks:
+    - edge
+    - database
+  logging: *logging
+
+services:
+  db:
+    image: ${DB_IMAGE:?Defina DB_IMAGE.}:${DB_VERSION:?Defina DB_VERSION.}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Defina POSTGRES_DB.}
+      POSTGRES_USER: ${POSTGRES_USER:?Defina POSTGRES_USER.}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD.}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          PGPASSWORD="$$POSTGRES_PASSWORD" psql --host=127.0.0.1 --username="$$POSTGRES_USER"
+          --dbname="$$POSTGRES_DB" --no-password --tuples-only
+          --command="SELECT current_setting('server_version'), postgis_version()"
+          >/dev/null
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    mem_limit: 2g
+    shm_size: 256m
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - database
+    logging: *logging
+
+  api1:
+    <<: *api
+    image: ${API_IMAGE:?Defina API_IMAGE.}:${API1_VERSION:?Defina API1_VERSION.}
+
+  api2:
+    <<: *api
+    image: ${API_IMAGE:?Defina API_IMAGE.}:${API2_VERSION:?Defina API2_VERSION.}
+
+  web-assets:
+    image: ${WEB_IMAGE:?Defina WEB_IMAGE.}:${WEB_VERSION:?Defina WEB_VERSION.}
+    profiles:
+      - deploy
+    environment:
+      WEB_VERSION: ${WEB_VERSION:?Defina WEB_VERSION.}
+    volumes:
+      - web-assets:/srv/bora
+    network_mode: none
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+  caddy:
+    image: caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-${DOMAIN:?Defina DOMAIN.}}
+      ACME_EMAIL: ${ACME_EMAIL:?Defina ACME_EMAIL.}
+      API_UPSTREAMS: api1:8080 api2:8080
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - type: bind
+        source: ${BORA_CONFIG_DIR:?Defina BORA_CONFIG_DIR.}
+        target: /etc/caddy
+        read_only: true
+        bind:
+          create_host_path: false
+      - web-assets:/srv/bora:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api1:
+        condition: service_healthy
+      api2:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --quiet
+        - --output-document=/dev/null
+        - http://127.0.0.1:2019/config/
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    mem_limit: 128m
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - edge
+    logging: *logging
+
+networks:
+  edge:
+  database:
+    internal: true
+
+volumes:
+  postgres-data:
+  web-assets:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,209 @@
+# Publicação
+
+A configuração de referência para produção usa uma VM Azure com Ubuntu 24.04 arm64,
+Docker Compose, PostgreSQL com PostGIS, duas instâncias da API e Caddy.
+O domínio previsto é `bora.alexandregaia.me`.
+Uma única VM continua sendo um ponto único de falha. A continuidade durante atualizações
+é verificada com requisições HTTP reais; conexões WebSocket precisarão recuperar estado
+quando esse recurso existir.
+
+## Conta, VM e DNS
+
+1. Ativar a assinatura Azure for Students e conferir suas regiões permitidas, cotas de CPU e
+   disponibilidade de tamanhos antes de criar recursos. Registrar o provedor `Microsoft.Compute`
+   se ele ainda não estiver registrado. Cota disponível não garante capacidade na criação.
+2. Criar a VM em Canadá Central (`canadacentral`), tamanho `Standard_B2ps_v2`, com 2 vCPUs,
+   8 GiB de RAM e imagem Ubuntu Server 24.04 LTS arm64 de geração 2. Usar disco de sistema
+   de 64 GiB Standard SSD LRS (`StandardSSD_LRS`) e IPv4 público estático de SKU Standard.
+   Configurar acesso por chave SSH; manter a chave privada no computador do proprietário e
+   fornecer somente a chave pública de administração à VM.
+3. No grupo de segurança de rede (NSG), permitir TCP 80 e 443 para a web e TCP 22 para a
+   administração e o runner do GitHub Actions. Os runners hospedados podem trocar de endereço;
+   permitir SSH somente para o IP do administrador impede a publicação pelo pipeline.
+   A autenticação SSH permanece exclusiva por chave. A porta 5432 do banco e as portas das
+   APIs ficam privadas. UDP 443 é opcional para HTTP/3 e exige uma liberação própria no NSG
+   e no firewall da VM; o provisionamento atual adiciona somente TCP 80/443.
+4. Criar o registro DNS A `bora` apontando para o IPv4 público da VM. Confirmar a resolução
+   antes do primeiro deploy; o Caddy obtém e renova o certificado HTTPS automaticamente.
+
+O cadastro e o registro DNS são feitos pelo proprietário com orientação. A configuração de VM
+acima é uma proposta de implantação; a criação e o provisionamento precisam ser concluídos
+antes de publicar a aplicação. Conferir as regras de entrada na documentação de
+[grupos de segurança de rede](https://learn.microsoft.com/en-us/azure/virtual-network/network-security-groups-overview).
+
+## Crédito e custo
+
+Azure for Students oferece US$ 100 de crédito total para uso em até 12 meses. Esse saldo
+financia recursos cobrados conforme o uso; não equivale a uma VM permanentemente gratuita.
+Manter a assinatura sem conversão para pagamento por uso. Quando o crédito termina, a
+assinatura é desabilitada conforme as
+[condições da oferta](https://azure.microsoft.com/en-us/pricing/offers/ms-azr-0170p/).
+
+A referência de custo consultada em 18/10/2026 para um mês de 730 horas é:
+
+| Recurso                             | Referência em US$               |
+| ----------------------------------- | ------------------------------- |
+| VM Linux B2ps_v2                    | 0,0736/h, aproximadamente 53,73 |
+| Disco E6 Standard SSD LRS de 64 GiB | 5,28/mês                        |
+| IPv4 público Standard               | 0,005/h, aproximadamente 3,65   |
+| Total estimado                      | 62,66                           |
+
+Operações de disco e tráfego cobrado não estão incluídos; o consumo real precisa ser acompanhado
+no portal. Recalcular os valores antes da criação ou de qualquer mudança de tamanho, região ou
+disco: [preço da VM no catálogo Azure](https://prices.azure.com/api/retail/prices?api-version=2023-01-01-preview&%24filter=armSkuName%20eq%20%27Standard_B2ps_v2%27%20and%20armRegionName%20eq%20%27canadacentral%27%20and%20priceType%20eq%20%27Consumption%27%20and%20productName%20eq%20%27Virtual%20Machines%20Bpsv2%20Series%27%20and%20skuName%20eq%20%27B2ps%20v2%27),
+[discos gerenciados](https://azure.microsoft.com/en-us/pricing/details/managed-disks/) e
+[endereços IP](https://azure.microsoft.com/en-us/pricing/details/ip-addresses/).
+
+Para interromper o consumo de computação durante períodos sem demonstrações, desalocar a VM
+pelo Azure e confirmar o estado `Stopped (deallocated)`. Desligar o Ubuntu por SSH mantém a VM
+alocada e cobrada. Disco e IPv4 público continuam consumindo crédito enquanto seus recursos
+existirem. A aplicação fica indisponível durante a desalocação; ao iniciar novamente, verificar
+os containers e o HTTPS. Consultar os
+[estados de energia e cobrança](https://learn.microsoft.com/en-us/azure/virtual-machines/states-billing).
+
+## Preparar a VM
+
+Usar chaves diferentes para administração e deploy. Copiar para a VM somente a chave pública
+do usuário de deploy e o script [provision.sh](../infra/deploy/provision.sh). Na sessão
+administrativa da VM, executar:
+
+```sh
+sudo bash provision.sh deploy.pub
+```
+
+O script requer uma VM Ubuntu 24.04 arm64 sem uma instalação conflitante de Docker. Ele
+confere o fingerprint da chave do repositório Docker, instala Engine e Compose, cria `deploy`,
+adiciona a chave pública e configura atualizações de segurança. O grupo Docker permite
+administrar o daemon; a chave desse usuário precisa ser protegida como uma credencial administrativa.
+
+As alterações de SSH passam por `sshd -t` antes do reload. A sessão atual permanece aberta:
+testar uma segunda conexão como `deploy` antes de encerrar a sessão administrativa. O script
+mantém a conta administrativa existente, desabilita autenticação SSH por senha e login direto
+como root, e não altera a porta SSH.
+
+O firewall é ajustado por uma unidade idempotente que adiciona somente uma permissão TCP
+80/443. As regras, políticas e portas SSH existentes são preservadas. O NSG do Azure e o
+firewall da VM precisam permitir o tráfego; configurar um deles não substitui o outro.
+
+O provisionamento gera uma senha aleatória para o banco em `/opt/bora/env.production`, com
+permissão `0600`, e não imprime esse valor. A execução seguinte preserva o arquivo. Conferir
+o domínio e o e-mail de ACME no próprio arquivo, usando um editor na VM.
+
+O diretório `/opt/bora/config` usa `0755` e contém somente a configuração pública do Caddy,
+em arquivo `0644`. Isso permite que o container sem capabilities leia o bind mount, mesmo
+com um UID diferente do usuário de deploy. Credenciais e arquivos de estado ficam fora dele.
+
+## Configurar o GitHub
+
+O workflow de publicação usa imagens no GHCR com a tag do SHA Git completo. Configurar no
+repositório os secrets `BORA_SSH_HOST`, `BORA_SSH_KEY` e `BORA_SSH_KNOWN_HOSTS`, usados por
+[release.yml](../.github/workflows/release.yml). O usuário SSH é `deploy`; os valores são o host,
+a chave privada de deploy e a chave pública do servidor em `known_hosts`. Conferir o fingerprint do
+servidor por um canal confiável, como o console da VM; `ssh-keyscan` sozinho não confirma identidade.
+
+O token temporário do workflow chega pela entrada padrão da conexão SSH. O script executa
+`docker login` usando um `DOCKER_CONFIG` temporário em `/opt/bora/.registry.*`, com diretório
+`0700`, e o apaga ao sair. A credencial não fica em `env.production`, nos argumentos dos
+processos ou nos logs da aplicação.
+
+## Atualizar e recuperar
+
+Cada bundle fica em `/opt/bora/releases/<sha>`, preservado junto às versões anteriores.
+O arquivo `env.production` contém configuração e credenciais; `state.env` registra as versões
+ativas do bundle, das duas APIs, da web e do banco. `previous.env` registra o ponto anterior
+à última publicação aprovada; `recovery.env` registra o início da tentativa em andamento.
+Uma tentativa que falha preserva o ponto de rollback manual. Esses arquivos ficam com acesso
+restrito ao usuário de deploy.
+
+O workflow executa:
+
+```sh
+bash /opt/bora/releases/<sha>/infra/deploy/deploy.sh <sha>
+```
+
+O deploy adquire um lock `flock`, baixa as imagens e prepara os assets antes de alterar o
+tráfego. O Caddy retira uma API do balanceamento; o script aguarda a drenagem, troca a instância
+e espera a readiness. Repete a operação com a segunda API. Só então ativa o HTML da nova web
+por uma troca atômica de symlink. Assets com hash de releases anteriores permanecem disponíveis
+para páginas já abertas. O processo do Caddy continua em execução.
+
+A readiness inclui o banco. O teste de fumaça consulta a página inicial e a readiness pela
+origem pública. Se uma etapa falhar, o script mantém o resultado de falha e tenta recuperar
+as versões efetivas anteriores, escolhendo primeiro a API que pode ser trocada enquanto a
+outra atende. Na primeira publicação ainda não existe uma versão anterior para recuperar.
+
+Para solicitar uma recuperação manual, na VM:
+
+```sh
+bash /opt/bora/releases/<sha-ativo>/infra/deploy/rollback.sh
+```
+
+O rollback restaura imagens, bundle e HTML anteriores. Ele não desfaz migrações, não troca a
+imagem do banco e não apaga dados. Toda mudança de esquema precisa aceitar simultaneamente
+as versões anterior e nova da aplicação: adicionar antes de usar, migrar dados e remover
+estruturas antigas apenas depois que não forem mais necessárias. Uma migração incompatível
+exige um procedimento de manutenção próprio antes da publicação.
+
+Manter pelo menos o bundle, as imagens e os assets do ponto de recuperação. Não executar uma
+limpeza geral de imagens ou volumes durante uma publicação. Se a recuperação falhar, consultar
+`state.env`, `previous.env`, os logs do Compose e a saúde de cada API antes de tentar novamente.
+
+## Verificar o mecanismo localmente
+
+Os testes usam um projeto Compose, um registry local, tags de 40 caracteres e volumes exclusivos.
+Constroem uma imagem inválida da API para verificar o rollback automático. A origem consultada
+é o próprio Caddy HTTP na rede isolada de testes; o teste não valida DNS ou emissão de certificado.
+
+Com Docker ativo, preparar as três imagens e executar:
+
+```sh
+docker build -t bora-dev-api:latest -f apps/api/Dockerfile .
+docker build -t bora-web:m01-assets -f apps/web/Dockerfile.prod .
+docker build -t bora-postgis:18.6-3.6.4 infra/postgres
+bash infra/deploy/test.sh
+```
+
+O mesmo launcher pode receber `BORA_TEST_API_IMAGE`, `BORA_TEST_WEB_IMAGE` e
+`BORA_TEST_DB_IMAGE` para usar as imagens já construídas pelo CI. Ele prepara o executor Linux,
+testa bootstrap, atualização, recuperação automática e rollback manual, e remove os containers e volumes do
+projeto de teste. Nenhum recurso do ambiente de desenvolvimento é usado como destino.
+
+O resultado informa quantas requisições receberam HTTP 200 durante a atualização e a falha
+simulada, e confirma que o container do Caddy foi preservado. Esse resultado descreve as
+condições exercitadas no teste, sem garantir disponibilidade absoluta da VM ou do provedor.
+
+Na validação local de 18/10/2026 em amd64, 1.376 requisições receberam HTTP 200 durante a
+atualização, a falha simulada e os rollbacks automático e manual. O teste também confirmou o
+lock de concorrência, a repetição idempotente de uma release, a falha de download sem perder
+o rollback anterior e a preservação dos containers do Caddy e do banco.
+
+## Monitorar
+
+Após confirmar o HTTPS, configurar no UptimeRobot os monitores HTTP da página inicial e de
+`https://bora.alexandregaia.me/actuator/health/readiness`, com os avisos no e-mail do proprietário.
+Conferir as opções e os intervalos disponíveis na conta no momento da configuração.
+
+Conferir o espaço de disco antes e depois de publicar uma versão:
+
+```sh
+df -h /
+docker system df
+```
+
+O build das imagens acontece no CI; a VM baixa as imagens finais e não precisa guardar o JDK
+ou o cache Maven. Duas instâncias da mesma imagem compartilham suas camadas. Releases, assets
+antigos e imagens continuam ocupando espaço ao longo do tempo. Antes de remover uma versão,
+conferir `state.env` e `previous.env`, preservando o bundle, as imagens e os assets atuais e do
+ponto de rollback, além da imagem e do volume do banco. Não executar `docker system prune`,
+limpezas gerais de volumes ou remoções durante uma publicação. O crescimento do grafo e dos
+dados de demonstração precisará ser medido quando o roteamento for implementado.
+
+A B2ps_v2 usa créditos de CPU e tem desempenho base de 40%; as 2 vCPUs não representam
+capacidade integral contínua. Na validação do roteamento no M03, registrar créditos disponíveis,
+memória e tempo de importação do GraphHopper antes de avaliar carga sustentada. Os limites de
+memória dos containers precisam comportar o grafo e o restante da aplicação simultaneamente.
+Consultar as [características da série Bpsv2](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/bpsv2-series).
+
+Referências: [Docker no Ubuntu](https://docs.docker.com/engine/install/ubuntu/),
+[atualização de configuração do Caddy](https://caddyserver.com/docs/command-line#caddy-reload)
+e [Docker Compose up](https://docs.docker.com/reference/cli/docker/compose/up/).

@@ -1,0 +1,3 @@
+FROM docker:29.7.2-cli
+RUN apk add --no-cache bash coreutils curl util-linux
+ENTRYPOINT ["/bin/bash"]
