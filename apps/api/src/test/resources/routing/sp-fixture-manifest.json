@@ -1,0 +1,71 @@
+{
+  "datasetFile": "sp-fixture.osm.pbf",
+  "sha256": "edbc4d0b53d21b6b4febe82f4b22b3610f3025398785cc7b44e9c2bfc06e0cbf",
+  "sizeBytes": 57655,
+  "bbox": [-46.661, -23.57, -46.647, -23.557],
+  "source": {
+    "datasetFile": "sudeste-261001.osm.pbf",
+    "url": "https://download.geofabrik.de/south-america/brazil/sudeste-261001.osm.pbf",
+    "sha256": "1463147c21162a1460cc8bb91f4bf557368fec4ab24ecfd382bdb92ebbda7f69",
+    "md5": "6730c6e9739a176bb6da3b911fb4de0e",
+    "sizeBytes": 859984241,
+    "dataTimestamp": "2026-10-01T20:22:06Z"
+  },
+  "provenance": {
+    "provider": "Geofabrik GmbH",
+    "providerUrl": "https://download.geofabrik.de/south-america/brazil/sudeste.html",
+    "tool": "osmium-tool 1.18.0-1",
+    "baseImage": "debian:trixie-20261005-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f",
+    "debianSnapshot": "20261018T000000Z",
+    "extractStrategy": "smart",
+    "completeRelationTypes": ["restriction"],
+    "filters": ["w/highway", "w/route=ferry,shuttle_train", "r/type=restriction"],
+    "objectMetadata": false,
+    "pbfCompression": "zlib",
+    "warmupNodes": [
+      {
+        "wayId": 424211549,
+        "originNodeId": 9951994925,
+        "destinationNodeId": 4941017122
+      },
+      {
+        "wayId": 230628519,
+        "originNodeId": 1953466354,
+        "destinationNodeId": 7827753895
+      }
+    ],
+    "parentDataset": {
+      "datasetFile": "centro-sp-261001.osm.pbf",
+      "sha256": "05f56ac904a6f4b150553d322a86a177b72669428b852b4e76ed1fbe8dc14d96"
+    }
+  },
+  "license": {
+    "identifier": "ODbL-1.0",
+    "url": "https://opendatacommons.org/licenses/odbl/1-0/",
+    "attribution": "© OpenStreetMap contributors",
+    "attributionUrl": "https://www.openstreetmap.org/copyright"
+  },
+  "warmupPairs": [
+    {
+      "origin": {
+        "latitude": -23.5592436,
+        "longitude": -46.6609317
+      },
+      "destination": {
+        "latitude": -23.5635294,
+        "longitude": -46.656023
+      }
+    },
+    {
+      "origin": {
+        "latitude": -23.5609488,
+        "longitude": -46.6571456
+      },
+      "destination": {
+        "latitude": -23.5644226,
+        "longitude": -46.6606947
+      }
+    }
+  ],
+  "minNetworkSize": 0
+}

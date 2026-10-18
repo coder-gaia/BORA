@@ -20,6 +20,7 @@ old_version=1111111111111111111111111111111111111111
 new_version=2222222222222222222222222222222222222222
 bad_version=3333333333333333333333333333333333333333
 missing_version=4444444444444444444444444444444444444444
+bad_import_version=5555555555555555555555555555555555555555
 api_source=${BORA_TEST_API_IMAGE:-bora-dev-api:latest}
 web_source=${BORA_TEST_WEB_IMAGE:-bora-web:m01-assets}
 db_source=${BORA_TEST_DB_IMAGE:-bora-postgis:18.6-3.6.4}
@@ -28,6 +29,7 @@ export BORA_ROOT=$test_root BORA_PROJECT=$project
 export BORA_COMPOSE_OVERRIDE=compose.release-test.yml
 export BORA_PUBLIC_URL=http://caddy
 export READY_TIMEOUT=45 DRAIN_SECONDS=1 SMOKE_ATTEMPTS=3 RELEASE_HTTP_PORT=$http_port
+export BUNDLE_VERSION=$old_version
 export API1_VERSION=$old_version API2_VERSION=$old_version WEB_VERSION=$old_version DB_VERSION=$old_version
 
 cleanup() {
@@ -58,7 +60,7 @@ mkdir -p "$test_root/releases" "$test_root/config"
 # Sem acesso público de leitura, o Caddy sem capabilities não consegue iniciá-lo.
 chown 1001:1001 "$test_root/config"
 chmod 750 "$test_root/config"
-for version in "$old_version" "$new_version" "$bad_version" "$missing_version"; do
+for version in "$old_version" "$new_version" "$bad_version" "$missing_version" "$bad_import_version"; do
   mkdir -p "$test_root/releases/$version/infra"
   cp -R "$source_root/infra/deploy" "$source_root/infra/compose" "$source_root/infra/caddy" \
     "$test_root/releases/$version/infra/"
@@ -90,13 +92,16 @@ for version in "$old_version" "$new_version"; do
 done
 docker tag "$db_source" "$DB_IMAGE:$old_version"
 docker push "$DB_IMAGE:$old_version" >/dev/null
-for version in "$old_version" "$new_version" "$bad_version"; do
+for version in "$old_version" "$new_version" "$bad_version" "$bad_import_version"; do
   docker tag "$web_source" "$WEB_IMAGE:$version"
   docker push "$WEB_IMAGE:$version" >/dev/null
 done
 printf 'FROM %s\nENTRYPOINT ["/bin/sh", "-c", "exit 42"]\n' "$api_source" \
   | docker build --tag "$API_IMAGE:$bad_version" - >/dev/null
 docker push "$API_IMAGE:$bad_version" >/dev/null
+printf 'FROM %s\nUSER root\nRUN rm -f /app/bora-api.jar\nUSER bora:bora\n' "$api_source" \
+  | docker build --tag "$API_IMAGE:$bad_import_version" - >/dev/null
+docker push "$API_IMAGE:$bad_import_version" >/dev/null
 
 docker compose --project-name "$project" --project-directory "$test_root" \
   --env-file "$test_root/env.production" \
@@ -252,6 +257,33 @@ probe() {
 }
 probe &
 probe_pid=$!
+
+service_id() {
+  docker compose --project-name "$project" --env-file "$test_root/env.production" \
+    -f "$test_root/releases/$old_version/infra/compose/compose.prod.yml" \
+    -f "$test_root/releases/$old_version/infra/compose/compose.release-test.yml" ps --quiet "$1"
+}
+
+# A importação precisa falhar antes de alterar o estado ou os serviços saudáveis.
+state_before_import=$(cat "$test_root/state.env")
+api1_before_import=$(service_id api1)
+api2_before_import=$(service_id api2)
+marker_before_import=$(cat "$test_root/config/upstream-mode")
+test ! -e "$test_root/previous.env"
+if bash "$test_root/releases/$bad_import_version/infra/deploy/deploy.sh" "$bad_import_version"; then
+  printf '%s\n' 'A imagem sem o JAR do importador foi aceita incorretamente.' >&2
+  exit 1
+fi
+test "$(cat "$test_root/state.env")" = "$state_before_import"
+test ! -e "$test_root/previous.env"
+test "$(service_id api1)" = "$api1_before_import"
+test "$(service_id api2)" = "$api2_before_import"
+test "$(service_id caddy)" = "$caddy_before"
+test "$(service_id db)" = "$db_before"
+test "$(cat "$test_root/config/upstream-mode")" = "$marker_before_import"
+test "$(docker exec "$caddy_before" wget --quiet --output-document=- \
+  http://127.0.0.1:2019/config/)" = "$caddy_config_before"
+
 bash "$test_root/releases/$new_version/infra/deploy/deploy.sh" "$new_version"
 grep -Fxq "API1_VERSION=$new_version" "$test_root/state.env"
 grep -Fxq "API2_VERSION=$new_version" "$test_root/state.env"
@@ -317,5 +349,5 @@ docker logs "$persistent_probe"
   printf '%s\n' 'O probe persistente registrou falhas HTTP ou de conexão.' >&2
   exit 1
 }
-printf 'Integração aprovada: bootstrap, atualização, rollback automático e manual; %s respostas curl HTTP 200, probe Node sem falhas, Caddy e banco preservados, sem reload.\n' \
+printf 'Integração aprovada: bootstrap, falha de importação, atualização, rollback automático e manual; %s respostas curl HTTP 200, probe Node sem falhas, Caddy e banco preservados, sem reload.\n' \
   "$(wc -l < "$test_root/http-probe.log")"

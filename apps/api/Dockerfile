@@ -9,6 +9,7 @@ COPY mvnw pom.xml ./
 COPY apps/api/pom.xml apps/api/pom.xml
 COPY apps/simulator/pom.xml apps/simulator/pom.xml
 COPY apps/api/src apps/api/src
+COPY infra/osm/data infra/osm/data
 
 RUN chmod +x mvnw \
     && ./mvnw --batch-mode --no-transfer-progress -pl apps/api -am package -DskipTests
@@ -18,7 +19,8 @@ RUN apt-get update \
     && apt-get install --yes --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 bora \
-    && useradd --uid 10001 --gid bora --no-create-home --shell /usr/sbin/nologin bora
+    && useradd --uid 10001 --gid bora --no-create-home --shell /usr/sbin/nologin bora \
+    && install -d -o bora -g bora /var/lib/bora/routing
 
 WORKDIR /app
 COPY --from=build --chown=bora:bora /workspace/apps/api/target/bora-api.jar /app/bora-api.jar

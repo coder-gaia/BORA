@@ -8,7 +8,8 @@ composição Docker. As funcionalidades de entrega estão em desenvolvimento.
 
 A [demonstração pública](https://bora.alexandregaia.me/) apresenta a saúde dos serviços.
 O domínio já contém as máquinas de estado, o esquema espacial e 40 lojas fictícias;
-os fluxos de entrega ainda serão disponibilizados na interface.
+o roteamento usa um recorte real das vias de São Paulo. Os fluxos de entrega ainda
+serão disponibilizados na interface.
 
 ## Executar localmente
 
@@ -21,8 +22,9 @@ cd BORA
 docker compose -f infra/compose/compose.dev.yml up --build --wait
 ```
 
-Abra [localhost:5173](http://localhost:5173). A página consulta a API e informa se o serviço e o
-banco estão disponíveis. O primeiro build baixa as dependências e pode demorar alguns minutos.
+Abra [localhost:5173](http://localhost:5173). A página consulta a saúde da API. A readiness
+inclui o banco e o grafo de rotas aquecido. O primeiro build baixa as dependências; o Compose
+prepara o grafo antes de iniciar a API. O recorte de ruas já está no repositório.
 
 | Serviço                             | Endereço local                                    |
 | ----------------------------------- | ------------------------------------------------- |
@@ -40,8 +42,19 @@ docker compose -f infra/compose/compose.dev.yml logs --tail 100
 docker compose -f infra/compose/compose.dev.yml down
 ```
 
-O comando `down` preserva o volume do banco. Para apagar os dados locais deliberadamente, use
-`down --volumes`. Alterar a senha no `.env` não altera a senha de um volume já inicializado.
+O comando `down` preserva os volumes do banco e do grafo. Para apagar esses dados locais
+deliberadamente, use `down --volumes`. Alterar a senha no `.env` não altera a senha de um volume
+já inicializado.
+
+Para verificar rotas e ETA dentro do motor, com o ambiente já preparado:
+
+```sh
+docker compose -f infra/compose/compose.dev.yml run --rm --no-deps api --routing-benchmark --warmup=100 --iterations=500 --max-p95-ms=50
+```
+
+O relatório JSON mede o cálculo dentro da JVM, sem a latência de uma chamada pela internet.
+O ETA original usa as velocidades das vias, sem trânsito; `SIM_SPEED`, padrão `3`, também
+produz a duração acelerada da demonstração. Consulte o [guia de roteamento](docs/roteamento.md).
 
 ## Desenvolver sem containers para API e web
 
@@ -58,12 +71,18 @@ node scripts/install-hooks.mjs
 Em um terminal PowerShell, inicie a API:
 
 ```powershell
+.\mvnw.cmd --batch-mode -pl apps/api -am package -DskipTests
+$env:BORA_GRAPH_ROOT = Join-Path (Get-Location) 'apps/api/target/routing-graphs'
+java -jar apps/api/target/bora-api.jar --routing-import
 .\mvnw.cmd --batch-mode -pl apps/api spring-boot:run
 ```
 
 Em bash:
 
 ```sh
+./mvnw --batch-mode -pl apps/api -am package -DskipTests
+export BORA_GRAPH_ROOT="$(pwd)/apps/api/target/routing-graphs"
+java -jar apps/api/target/bora-api.jar --routing-import
 ./mvnw --batch-mode -pl apps/api spring-boot:run
 ```
 
@@ -72,6 +91,9 @@ Em outro terminal, inicie a web:
 ```sh
 npm run dev --prefix apps/web
 ```
+
+A preparação do grafo roda sem Spring, banco ou servidor HTTP. Reexecutá-la reutiliza o mesmo
+grafo quando seu hash permanece igual. A API abre esse diretório apenas para leitura.
 
 A API usa as mesmas credenciais locais padrão. Ajustes no `.env` do Compose precisam ser
 repetidos nas variáveis `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME` e
@@ -116,24 +138,24 @@ organização do código.
 
 ## Tecnologias
 
-| Componente                            | Versão fixada   |
-| ------------------------------------- | --------------- |
-| Java / Temurin                        | 25 / 25.0.4.1+1 |
-| Spring Boot                           | 4.1.1           |
-| Spring Modulith                       | 2.1.1           |
-| Maven                                 | 3.10.0          |
-| PostgreSQL                            | 18.6            |
-| PostGIS                               | 3.6.4           |
-| GraphHopper (reservado ao roteamento) | 11.1            |
-| Node.js                               | 24.22.0 LTS     |
-| React                                 | 19.3.1          |
-| Vite                                  | 8.3.4           |
-| TypeScript                            | 6.0.3           |
-| Tailwind CSS                          | 4.3.3           |
+| Componente      | Versão fixada   |
+| --------------- | --------------- |
+| Java / Temurin  | 25 / 25.0.4.1+1 |
+| Spring Boot     | 4.1.1           |
+| Spring Modulith | 2.1.1           |
+| Maven           | 3.10.0          |
+| PostgreSQL      | 18.6            |
+| PostGIS         | 3.6.4           |
+| GraphHopper     | 11.1            |
+| Node.js         | 24.22.0 LTS     |
+| React           | 19.3.1          |
+| Vite            | 8.3.4           |
+| TypeScript      | 6.0.3           |
+| Tailwind CSS    | 4.3.3           |
 
 TypeScript 6.0.3 é a versão estável compatível com o lint escolhido. As demais dependências
-da web estão fixadas em `apps/web/package.json` e `package-lock.json`. A versão do GraphHopper
-está reservada no POM; a biblioteca será adicionada quando o roteamento for implementado.
+da web estão fixadas em `apps/web/package.json` e `package-lock.json`. O GraphHopper executa
+embutido na API, com o recorte de São Paulo versionado no repositório.
 
 ## Arquitetura
 
@@ -143,7 +165,10 @@ apps/
   simulator/    módulo Java reservado à simulação
   web/          React, Vite, TypeScript e componentes de interface
 infra/
-  compose/      ambiente local integrado
+  compose/      ambientes local e de produção
+  caddy/        HTTPS, arquivos estáticos e proxy
+  deploy/       provisionamento, publicação gradual e recuperação
+  osm/          recorte, hashes e preparo dos dados de ruas
   postgres/     PostgreSQL com PostGIS para amd64 e arm64
 docs/           arquitetura, decisões e desenvolvimento
 scripts/        regras, formatação e instalação do hook local

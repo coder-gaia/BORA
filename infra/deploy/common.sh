@@ -59,11 +59,21 @@ dc() {
   fi
   env BORA_CONFIG_DIR="$BORA_CONFIG_DIR" \
     API_IMAGE="$API_IMAGE" WEB_IMAGE="$WEB_IMAGE" DB_IMAGE="$DB_IMAGE" \
+    BUNDLE_VERSION="$BUNDLE_VERSION" \
     API1_VERSION="$API1_VERSION" API2_VERSION="$API2_VERSION" \
     WEB_VERSION="$WEB_VERSION" DB_VERSION="$DB_VERSION" \
     docker compose --project-name "$BORA_PROJECT" --project-directory "$BORA_ROOT" \
       --env-file "$BORA_ROOT/env.production" \
       "${compose_files[@]}" "$@"
+}
+
+prepare_routing_graph() {
+  local services
+  services=$(dc --profile deploy config --services) || return 1
+  # Bundles anteriores ao roteamento não têm importador; seus contratos são preservados.
+  if grep -Fxq graph-import <<< "$services"; then
+    dc run --rm --no-deps -T graph-import || return 1
+  fi
 }
 
 copy_proxy_config() {
@@ -217,6 +227,7 @@ restore_previous() {
   read_state "$state_file" PREVIOUS || return 1
   select_bundle "$PREVIOUS_BUNDLE_VERSION" || return 1
   [[ $DB_VERSION == "$PREVIOUS_DB_VERSION" ]] || fail 'Rollback não pode trocar a versão do banco.' || return 1
+  prepare_routing_graph || return 1
   copy_proxy_config || return 1
   if service_ready api1; then
     first=api2; first_version=$PREVIOUS_API2_VERSION

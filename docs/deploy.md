@@ -139,7 +139,7 @@ público. A pendência só é removida após aplicar a configuração ou confirm
 início do proxy a lerá. Assim, uma interrupção entre gravar e recarregar não faz uma nova
 tentativa confundir o arquivo em disco com a configuração em execução.
 
-A readiness inclui o banco. O teste de fumaça consulta a página inicial e a readiness pela
+A readiness inclui o banco e o grafo carregado e aquecido. O teste de fumaça consulta a página inicial e a readiness pela
 origem pública. Se uma etapa falhar, o script mantém o resultado de falha e tenta recuperar
 as versões efetivas anteriores, escolhendo primeiro a API que pode ser trocada enquanto a
 outra atende. Na primeira publicação ainda não existe uma versão anterior para recuperar.
@@ -159,6 +159,30 @@ exige um procedimento de manutenção próprio antes da publicação.
 Manter pelo menos o bundle, as imagens e os assets do ponto de recuperação. Não executar uma
 limpeza geral de imagens ou volumes durante uma publicação. Se a recuperação falhar, consultar
 `state.env`, `previous.env`, os logs do Compose e a saúde de cada API antes de tentar novamente.
+
+## Preparar e medir o roteamento
+
+Antes de tocar o tráfego, o deploy executa `graph-import` com a imagem do bundle de destino.
+O processo usa até 2 GiB, não tem rede e não inicializa Spring ou o banco. Importa uma vez,
+aquece uma rota e publica um diretório imutável por hash em `routing-graphs`. Se falhar, as
+APIs e o estado da publicação continuam nas versões anteriores. Bundles anteriores ao
+roteamento não possuem esse serviço e são tratados sem importação.
+
+Cada API monta esse volume somente para leitura, dentro do seu limite de 1.536 MiB. O diretório
+na imagem pertence ao UID 10001, também usado pelo importador, para inicializar um volume novo.
+Preservar os grafos das versões atual e anterior junto aos respectivos bundles e imagens.
+O rollback não apaga grafos ou muda a imagem do banco.
+
+Para medir o cálculo na própria VM, como usuário de deploy e com uma publicação concluída:
+
+```sh
+bash /opt/bora/releases/<sha-ativo>/infra/deploy/benchmark-routing.sh --warmup=100 --iterations=500 --max-p95-ms=50
+```
+
+O script adquire o lock de publicação e inicia uma JVM separada, usando o limite e o volume
+somente leitura da API. Não interrompe os processos que atendem o público. O relatório mede
+rota e ETA dentro da JVM; a latência pela internet deve ser medida separadamente.
+Consulte o [guia de roteamento](roteamento.md) para dados, perfil e interpretação das medições.
 
 ## Verificar o mecanismo localmente
 
@@ -209,10 +233,10 @@ antigos e imagens continuam ocupando espaço ao longo do tempo. Antes de remover
 conferir `state.env` e `previous.env`, preservando o bundle, as imagens e os assets atuais e do
 ponto de rollback, além da imagem e do volume do banco. Não executar `docker system prune`,
 limpezas gerais de volumes ou remoções durante uma publicação. O crescimento do grafo e dos
-dados de demonstração precisará ser medido quando o roteamento for implementado.
+dados de demonstração precisa ser acompanhado a cada atualização.
 
 A B2ps_v2 usa créditos de CPU e tem desempenho base de 40%; as 2 vCPUs não representam
-capacidade integral contínua. Na validação do roteamento no M03, registrar créditos disponíveis,
+capacidade integral contínua. Na validação do roteamento, registrar créditos disponíveis,
 memória e tempo de importação do GraphHopper antes de avaliar carga sustentada. Os limites de
 memória dos containers precisam comportar o grafo e o restante da aplicação simultaneamente.
 Consultar as [características da série Bpsv2](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/bpsv2-series).

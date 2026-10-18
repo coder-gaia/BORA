@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6" generator="bora-routing-tests">
+  <!-- Rede fictícia criada para testar sentidos, conversões e barreiras. Não é um mapa real. -->
+  <node id="1" lat="-23.5500" lon="-46.6340"/>
+  <node id="2" lat="-23.5500" lon="-46.6330"/>
+  <node id="3" lat="-23.5500" lon="-46.6320"/>
+  <node id="4" lat="-23.5510" lon="-46.6330"/>
+  <node id="5" lat="-23.5490" lon="-46.6330"/>
+  <node id="6" lat="-23.5510" lon="-46.6340"/>
+  <node id="7" lat="-23.5510" lon="-46.6320"/>
+  <node id="8" lat="-23.5485" lon="-46.6320"/>
+  <node id="9" lat="-23.5485" lon="-46.6340"/>
+  <node id="10" lat="-23.5500" lon="-46.6310"/>
+  <node id="11" lat="-23.5500" lon="-46.6300"/>
+  <node id="12" lat="-23.5480" lon="-46.6320">
+    <tag k="barrier" v="gate"/>
+    <tag k="motorcycle" v="no"/>
+  </node>
+  <node id="13" lat="-23.5475" lon="-46.6320"/>
+  <way id="101">
+    <nd ref="1"/><nd ref="2"/>
+    <tag k="highway" v="residential"/><tag k="name" v="Rua Oeste"/>
+  </way>
+  <way id="102">
+    <nd ref="2"/><nd ref="5"/>
+    <tag k="highway" v="residential"/><tag k="name" v="Rua Norte"/>
+  </way>
+  <way id="103">
+    <nd ref="1"/><nd ref="9"/><nd ref="5"/><nd ref="8"/><nd ref="3"/>
+    <nd ref="7"/><nd ref="4"/><nd ref="6"/><nd ref="1"/>
+    <tag k="highway" v="residential"/><tag k="name" v="Contorno"/>
+  </way>
+  <way id="104">
+    <nd ref="2"/><nd ref="3"/>
+    <tag k="highway" v="residential"/><tag k="name" v="Rua Leste"/>
+  </way>
+  <way id="105">
+    <nd ref="4"/><nd ref="2"/>
+    <tag k="highway" v="residential"/><tag k="name" v="Rua Sul"/>
+  </way>
+  <way id="201">
+    <nd ref="10"/><nd ref="11"/>
+    <tag k="highway" v="residential"/><tag k="oneway" v="yes"/>
+  </way>
+  <way id="202">
+    <nd ref="3"/><nd ref="10"/>
+    <tag k="highway" v="residential"/>
+  </way>
+  <way id="301">
+    <nd ref="8"/><nd ref="12"/><nd ref="13"/>
+    <tag k="highway" v="residential"/>
+  </way>
+  <relation id="401">
+    <member type="way" ref="101" role="from"/>
+    <member type="node" ref="2" role="via"/>
+    <member type="way" ref="102" role="to"/>
+    <tag k="type" v="restriction"/>
+    <tag k="restriction" v="no_left_turn"/>
+  </relation>
+</osm>

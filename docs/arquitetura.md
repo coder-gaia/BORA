@@ -2,7 +2,7 @@
 
 Bora mantém API, simulador e interface em um monorepo. O backend evolui como monolito modular,
 com transações locais e fronteiras verificáveis. A base atual contém saúde operacional,
-máquinas de estado, esquema PostGIS e histórico transacional dos pedidos. O simulador ainda
+máquinas de estado, esquema PostGIS, histórico transacional e roteamento embutido. O simulador ainda
 não executa cenários.
 
 ```mermaid
@@ -10,15 +10,17 @@ flowchart LR
   Browser[Navegador] --> Web[Vite e React]
   Web -->|proxy de saúde| API[Spring Boot]
   API --> DB[(PostgreSQL e PostGIS)]
+  API -->|somente leitura| Graph[(Grafo GraphHopper)]
 ```
 
-O Compose local inicia o banco, aguarda a extensão PostGIS, inicia a API e só então disponibiliza
-a web. A readiness da API inclui o banco. A liveness informa a saúde do processo sem depender
-da disponibilidade do banco. Os detalhes internos do banco não são expostos pelo health HTTP.
+O Compose local prepara o grafo em um processo separado, inicia o banco e aguarda PostGIS antes
+de iniciar a API e disponibilizar a web. A readiness inclui o banco e o grafo carregado com uma
+rota de aquecimento aprovada. A liveness informa a saúde do processo sem depender desses dados.
+Os health checks não expõem caminhos do grafo ou detalhes internos do banco.
 
 ## Evolução prevista
 
-Os módulos `orders`, `couriers` e `dispatch` contêm os primeiros contratos do domínio.
+Os módulos `orders`, `couriers`, `dispatch` e `routing` contêm os primeiros contratos do domínio.
 Entidades e escrita transacional de pedidos ficam em `orders.internal`; o teste Modulith
 verifica as fronteiras. Os demais módulos serão introduzidos conforme seus comportamentos
 existirem. O [guia de domínio](dominio.md) descreve estados, esquema e invariantes.
@@ -50,8 +52,16 @@ flowchart LR
   Caddy --> API2[API 2]
   API1 --> DB[(PostgreSQL e PostGIS)]
   API2 --> DB
+  Import[Preparação única do grafo] --> Graph[(Grafos imutáveis por hash)]
+  API1 -->|somente leitura| Graph
+  API2 -->|somente leitura| Graph
 ```
 
 A troca de APIs acontece uma instância por vez, com drenagem e readiness. A web usa ativação
 atômica de arquivos e preserva assets anteriores. O fluxo e os limites dessa recuperação estão
 no [guia de publicação](deploy.md) e na [decisão de publicação gradual](decisoes/0002-publicacao-gradual.md).
+
+O importador prepara e aquece o grafo antes de mudar o tráfego. Publica um diretório por hash,
+mantendo versões anteriores para rollback. As APIs usam GraphHopper embutido e compartilham
+esse volume somente para leitura; o cálculo não chama um serviço externo.
+O [guia de roteamento](roteamento.md) descreve perfil, dados, ETA e medições.

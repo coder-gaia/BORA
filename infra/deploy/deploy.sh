@@ -48,6 +48,9 @@ WEB_VERSION=$target_version
 dc run --rm --no-deps -T -e "WEB_VERSION=$WEB_VERSION" web-assets stage
 WEB_VERSION=$old_web_version
 
+# O grafo novo é preparado antes de mudar o tráfego ou qualquer instância.
+prepare_routing_graph
+
 changes_started=false
 on_failure() {
   local status=$1

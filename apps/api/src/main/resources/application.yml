@@ -40,6 +40,13 @@ management:
       show-details: never
       group:
         readiness:
-          include: readinessState,db
+          include: readinessState,db,routing
         liveness:
           include: livenessState
+
+bora:
+  routing:
+    graph-root: ${BORA_GRAPH_ROOT:target/routing-graphs}
+    manifest: routing/data/manifest.json
+    simulation-speed: ${SIM_SPEED:3}
+    max-snap-distance-meters: 150

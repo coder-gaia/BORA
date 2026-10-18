@@ -40,8 +40,13 @@ versionados não usam caracteres U+2012 a U+2015; use o hífen comum quando nece
 
 Se a página informar indisponibilidade, consulte primeiro a readiness em
 `http://localhost:8080/actuator/health/readiness` e depois os logs do Compose. A readiness retorna
-HTTP 503 quando a API está ativa mas o banco não está pronto. A página permite consultar o
+HTTP 503 quando a API está ativa mas o banco ou o grafo de rotas não está pronto. A página permite consultar o
 estado novamente após a recuperação.
+
+A API abre o grafo somente para leitura. Ao desenvolver sem o Compose completo, prepare-o
+primeiro com `java -jar apps/api/target/bora-api.jar --routing-import`, usando o mesmo
+`BORA_GRAPH_ROOT` da API. O [guia de roteamento](roteamento.md) descreve as ferramentas e os
+testes com recortes reais e sintéticos.
 
 Se uma porta estiver ocupada, defina `POSTGRES_PORT`, `API_PORT` ou `WEB_PORT` no arquivo `.env`
 e use `docker compose --env-file .env -f infra/compose/compose.dev.yml ...`.

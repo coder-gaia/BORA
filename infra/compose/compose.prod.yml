@@ -16,6 +16,8 @@ x-api: &api
     SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: 30s
     MANAGEMENT_ENDPOINT_HEALTH_SHOW_COMPONENTS: always
     MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: never
+    BORA_GRAPH_ROOT: /var/lib/bora/routing
+    SIM_SPEED: ${SIM_SPEED:-3}
   depends_on:
     db:
       condition: service_healthy
@@ -32,6 +34,8 @@ x-api: &api
     start_period: 30s
   stop_grace_period: 45s
   mem_limit: 1536m
+  volumes:
+    - routing-graphs:/var/lib/bora/routing:ro
   read_only: true
   tmpfs:
     - /tmp:size=128m,mode=1777
@@ -45,6 +49,35 @@ x-api: &api
   logging: *logging
 
 services:
+  graph-import:
+    image: ${API_IMAGE:?Defina API_IMAGE.}:${BUNDLE_VERSION:?Defina BUNDLE_VERSION.}
+    profiles:
+      - deploy
+    entrypoint:
+      - java
+      - -XX:MaxRAMPercentage=70.0
+      - -jar
+      - /app/bora-api.jar
+    command:
+      - --routing-import
+    environment:
+      BORA_GRAPH_ROOT: /var/lib/bora/routing
+      SIM_SPEED: ${SIM_SPEED:-3}
+    volumes:
+      - routing-graphs:/var/lib/bora/routing
+    mem_limit: 2g
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    healthcheck:
+      disable: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
   db:
     image: ${DB_IMAGE:?Defina DB_IMAGE.}:${DB_VERSION:?Defina DB_VERSION.}
     restart: unless-stopped
@@ -154,6 +187,7 @@ networks:
     internal: true
 
 volumes:
+  routing-graphs:
   postgres-data:
   web-assets:
   caddy-data:

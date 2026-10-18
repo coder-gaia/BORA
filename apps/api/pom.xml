@@ -37,6 +37,11 @@
       <artifactId>hibernate-spatial</artifactId>
     </dependency>
     <dependency>
+      <groupId>com.graphhopper</groupId>
+      <artifactId>graphhopper-core</artifactId>
+      <version>${graphhopper.version}</version>
+    </dependency>
+    <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-flyway</artifactId>
     </dependency>
@@ -78,6 +83,15 @@
 
   <build>
     <finalName>bora-api</finalName>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <resource>
+        <directory>../../infra/osm/data</directory>
+        <targetPath>routing/data</targetPath>
+      </resource>
+    </resources>
     <plugins>
       <plugin>
         <groupId>org.springframework.boot</groupId>

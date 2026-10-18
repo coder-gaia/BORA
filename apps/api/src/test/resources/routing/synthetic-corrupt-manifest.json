@@ -1,0 +1,30 @@
+{
+  "datasetFile": "synthetic-network.osm",
+  "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "sizeBytes": 2190,
+  "bbox": [-46.635, -23.552, -46.629, -23.547],
+  "minNetworkSize": 0,
+  "source": "Rede sintética criada pelo projeto para testes, sem dados reais.",
+  "warmupPairs": [
+    {
+      "origin": {
+        "latitude": -23.55,
+        "longitude": -46.634
+      },
+      "destination": {
+        "latitude": -23.551,
+        "longitude": -46.633
+      }
+    },
+    {
+      "origin": {
+        "latitude": -23.55,
+        "longitude": -46.632
+      },
+      "destination": {
+        "latitude": -23.549,
+        "longitude": -46.633
+      }
+    }
+  ]
+}

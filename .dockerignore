@@ -4,6 +4,7 @@
 **/dist
 **/coverage
 **/test-results
+infra/osm/work
 .env
 .env.*
 !.env.example
