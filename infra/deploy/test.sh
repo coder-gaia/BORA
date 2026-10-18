@@ -20,6 +20,8 @@ docker run --rm \
   --env "BORA_TEST_ROOT=$mountpoint" \
   --env "BORA_TEST_API_IMAGE=${BORA_TEST_API_IMAGE:-bora-dev-api:latest}" \
   --env "BORA_TEST_WEB_IMAGE=${BORA_TEST_WEB_IMAGE:-bora-web:m01-assets}" \
+  --env "BORA_TEST_PREVIOUS_API_IMAGE=${BORA_TEST_PREVIOUS_API_IMAGE:-${BORA_TEST_API_IMAGE:-bora-dev-api:latest}}" \
+  --env "BORA_TEST_PREVIOUS_WEB_IMAGE=${BORA_TEST_PREVIOUS_WEB_IMAGE:-${BORA_TEST_WEB_IMAGE:-bora-web:m01-assets}}" \
   --env "BORA_TEST_DB_IMAGE=${BORA_TEST_DB_IMAGE:-bora-postgis:18.6-3.6.4}" \
   --env "BORA_TEST_REGISTRY_PORT=${BORA_TEST_REGISTRY_PORT:-15000}" \
   --env "BORA_TEST_HTTP_PORT=${BORA_TEST_HTTP_PORT:-18080}" \

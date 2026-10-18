@@ -49,10 +49,22 @@ public class CourierDirectory {
     }
     CourierTransition transition =
         CourierState.restore(courier.status()).apply(command, clock.instant());
-    jdbc.sql("UPDATE couriers SET status=:status,version=version+1 WHERE id=:id")
-        .param("id", id)
-        .param("status", transition.next().status().name())
-        .update();
+    int changed =
+        jdbc.sql(
+                """
+        UPDATE couriers SET status=:status,version=version+1,position_epoch=position_epoch+1
+        WHERE id=:id AND status=:previousStatus
+        """)
+            .param("id", id)
+            .param("previousStatus", courier.status().name())
+            .param("status", transition.next().status().name())
+            .update();
+    if (changed != 1) {
+      throw new ApiException(
+          HttpStatus.CONFLICT,
+          "COURIER_STATE_CHANGED",
+          "A disponibilidade do entregador mudou. Consulte o estado atual e tente novamente.");
+    }
     return find(id);
   }
 

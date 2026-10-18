@@ -102,6 +102,31 @@ acontece depois da gravação do lote; uma reconciliação periódica recupera p
 se essa notificação for perdida. Consulte [entregadores e posições](entregadores-e-posicoes.md).
 
 O módulo também chama a limpeza de reservas de `dispatch` antes de liberar o entregador
-atribuído. Cancelamento e expiração de ofertas pendentes já funcionam nesta etapa, preparando
-a convivência com a versão seguinte durante publicações. O despacho automático usa essa base
-no M06; a limpeza continua funcionando após um rollback.
+atribuído. Cancelamento, expiração, aceite e redistribuição usam a mesma ordem de bloqueio:
+pedido, oferta e entregador. Cada tentativa de despacho ou expiração trata somente um pedido
+por transação, evitando manter reservas de vários entregadores enquanto aguarda outro pedido.
+
+## Despacho e ofertas
+
+`dispatch` busca pedidos vencidos para tentativa com `FOR UPDATE SKIP LOCKED`. Para cada pedido,
+seleciona até oito entregadores próximos pelo índice espacial, calcula rotas e ordena pela duração
+simulada exata. O ETA em segundos é arredondado somente para exposição e armazenamento. A
+reserva condicional revalida disponibilidade, posição e geração da posição antes de bloquear um
+único candidato. Ofertas anteriores aceitas, recusadas ou expiradas para esse pedido excluem o
+mesmo entregador das próximas tentativas.
+
+A oferta dura 30 segundos. Aceite e recusa verificam o relógio depois dos bloqueios; uma decisão
+tardia confirma a expiração e libera a reserva antes de responder com conflito. Prazo, estado,
+tentativa seguinte e eventos ficam no PostgreSQL, compartilhados pelas duas APIs. O reinício de
+um processo não depende de temporizadores em memória para recuperar ofertas vencidas.
+
+A criação de novas ofertas exige um marcador de ativação com o SHA completo da própria API
+e o proxy no modo `both`. O deploy fecha esse marcador antes de substituir processos e o abre
+somente depois de validar APIs e web da mesma versão. A limpeza de reservas continua ativa
+durante a atualização e após recuperar a versão anterior. Consulte o
+[guia de publicação](deploy.md).
+
+O cliente consulta a própria oferta a cada dois segundos enquanto a página está visível. O
+horário do servidor acompanha a resposta para que a contagem não dependa do ajuste do relógio
+do dispositivo. As transições continuam validadas no servidor. Consulte os fluxos e limites em
+[entregadores e posições](entregadores-e-posicoes.md).

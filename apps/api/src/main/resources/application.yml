@@ -61,6 +61,11 @@ management:
           include: livenessState
 
 bora:
+  dispatch:
+    require-activation: ${BORA_DISPATCH_REQUIRE_ACTIVATION:true}
+    release-version: ${BORA_RELEASE_VERSION:}
+    activation-file: ${BORA_DISPATCH_ACTIVATION_FILE:}
+    upstream-mode-file: ${BORA_DISPATCH_UPSTREAM_MODE_FILE:}
   orders:
     confirmation-secret: ${BORA_CONFIRMATION_SECRET:bora-local-development-only-confirmation-key}
   routing:

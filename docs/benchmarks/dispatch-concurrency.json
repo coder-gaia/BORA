@@ -1,0 +1,84 @@
+{
+  "startedAt": "2026-10-18T23:02:31.638920870Z",
+  "sourceSha256": "dff1b2ab2dbbc9135714492097db529205d856a93f40de058e12de6dd8fc16b9",
+  "javaVersion": "25.0.4.1+1-LTS",
+  "availableProcessors": 4,
+  "maxHeapBytes": 805306368,
+  "routingManifest": "routing/sp-fixture-manifest.json",
+  "method": "Dois contextos Spring e pools independentes; barreira antes de cada par de operações reais de serviço; sem HTTP ou mocks de roteamento/banco.",
+  "fixture": "Pedidos e entregadores públicos simulados novos em cada rodada, na Paulista; dados terminais são preservados e retirados da fila após a verificação.",
+  "families": {
+    "reservation": {
+      "requestedRounds": 2500,
+      "executedRounds": 2500,
+      "verifiedRounds": 2500,
+      "startedAt": "2026-10-18T23:02:41.296219121Z",
+      "finishedAt": "2026-10-18T23:03:17.395572775Z"
+    },
+    "doubleAccept": {
+      "requestedRounds": 2500,
+      "executedRounds": 2500,
+      "verifiedRounds": 2500,
+      "startedAt": "2026-10-18T23:03:17.399765040Z",
+      "finishedAt": "2026-10-18T23:03:58.211954185Z"
+    },
+    "decision": {
+      "requestedRounds": 2500,
+      "executedRounds": 2500,
+      "verifiedRounds": 2500,
+      "startedAt": "2026-10-18T23:03:58.216337349Z",
+      "finishedAt": "2026-10-18T23:04:30.273408365Z"
+    },
+    "pickupReassignment": {
+      "requestedRounds": 2500,
+      "executedRounds": 2500,
+      "verifiedRounds": 2500,
+      "startedAt": "2026-10-18T23:04:30.277604843Z",
+      "finishedAt": "2026-10-18T23:04:53.020893690Z"
+    }
+  },
+  "variants": {
+    "sameOrderMultipleCouriers": 1250,
+    "multipleOrdersSameCourier": 1250,
+    "sameOfferDoubleAccept": 2500,
+    "acceptReject": 834,
+    "acceptExpire": 833,
+    "acceptCancel": 833,
+    "pickupOperationsReassignment": 2500
+  },
+  "success": true,
+  "datasetSha256": "edbc4d0b53d21b6b4febe82f4b22b3610f3025398785cc7b44e9c2bfc06e0cbf",
+  "pools": ["HikariPool-1", "HikariPool-2"],
+  "backendPids": [81, 86],
+  "executedRounds": 10000,
+  "verifiedRounds": 10000,
+  "globalInvariantViolations": {
+    "ordersWithMultiplePendingOffers": 0,
+    "couriersWithMultiplePendingOffers": 0,
+    "couriersWithMultipleActiveOrders": 0,
+    "ordersWithMultipleAssignmentEvents": 0,
+    "invalidDurableOfferDeadlines": 0
+  },
+  "restartDeadlineProof": {
+    "restartedSpringContext": true,
+    "creationGateClosed": true,
+    "passiveExpiryEnabled": true,
+    "persistedDeadline": "2026-10-18T23:02:56.841316Z",
+    "offerStatus": "EXPIRED",
+    "courierStatus": "AVAILABLE",
+    "clockAfterRestart": "2026-10-18T23:02:57.841316Z",
+    "bothOriginalContextsClosed": true
+  },
+  "finishedAt": "2026-10-18T23:04:55.204833999Z",
+  "elapsedMillis": 143565,
+  "requestedRounds": 10000,
+  "invariantChecks": 10000,
+  "runner": {
+    "sourceSha256": "dff1b2ab2dbbc9135714492097db529205d856a93f40de058e12de6dd8fc16b9",
+    "benchmark": "dispatch",
+    "cpus": 4,
+    "memoryBytes": 3221225472,
+    "databasePath": "IP interno do PostgreSQL na bridge Docker, porta 5432",
+    "controlHost": "host.docker.internal"
+  }
+}

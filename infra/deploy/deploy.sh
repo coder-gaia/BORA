@@ -26,6 +26,7 @@ if [[ -f $BORA_ROOT/state.env ]]; then
     apply_proxy_config
     if proxy_uses_marker; then set_upstreams 'api1:8080 api2:8080'; fi
     public_smoke
+    resume_dispatch
     log "A versão já está ativa: $target_version"
     exit 0
   fi
@@ -77,6 +78,7 @@ if service_running caddy; then
 fi
 
 changes_started=true
+write_dispatch_version disabled
 copy_proxy_config
 apply_proxy_config
 dc up --detach --wait --wait-timeout "$READY_TIMEOUT" db
@@ -98,6 +100,7 @@ if ! service_running caddy; then
 fi
 set_upstreams 'api1:8080 api2:8080'
 public_smoke
+resume_dispatch
 if [[ $has_previous == true ]]; then commit_previous_state; fi
 write_state "$BORA_ROOT/state.env"
 trap - ERR INT TERM

@@ -19,6 +19,19 @@ const statusLabels: Record<string, string> = {
   DELIVERED: 'Entregue',
   CANCELED: 'Cancelado',
 };
+const eventLabels: Record<string, string> = {
+  OFFER_CREATED: 'Oferta enviada ao entregador',
+  OFFER_ACCEPTED: 'Oferta aceita',
+  OFFER_REJECTED: 'Oferta recusada',
+  OFFER_EXPIRED: 'Prazo da oferta encerrado',
+  OFFER_CANCELED: 'Oferta cancelada',
+  ORDER_SEARCH_DELAYED: 'Busca por entregador está demorando',
+  ORDER_REASSIGNED: 'Pedido redistribuído',
+};
+
+function active(status: string | undefined) {
+  return status !== undefined && status !== 'CANCELED' && status !== 'DELIVERED';
+}
 
 function statusLabel(status: string | undefined) {
   return status ? (statusLabels[status] ?? 'Estado indisponível') : 'Estado indisponível';
@@ -128,6 +141,9 @@ function OrderWorkspace({ user }: { user: DemoUserView }) {
     queryKey: ['orders', user.id, page],
     queryFn: () => api.orders(page),
     enabled,
+    refetchInterval: (query) =>
+      query.state.data?.items.some((order) => active(order.status)) ? 3_000 : false,
+    refetchIntervalInBackground: false,
   });
   const store = useQuery({
     queryKey: ['store', user.id],
@@ -318,7 +334,22 @@ function OrderDetail({
   onChanged: () => void;
 }) {
   const queryClient = useQueryClient();
-  const order = useQuery({ queryKey: ['order', user.id, id], queryFn: () => api.order(id) });
+  const order = useQuery({
+    queryKey: ['order', user.id, id],
+    queryFn: () => api.order(id),
+    refetchInterval: (query) => (active(query.state.data?.status) ? 2_000 : false),
+    refetchIntervalInBackground: false,
+  });
+  const reassign = useMutation({
+    mutationFn: () => api.reassignOrder(id, order.data!.version),
+    async onSuccess() {
+      await queryClient.invalidateQueries({ queryKey: ['order', user.id, id] });
+      onChanged();
+    },
+    onError() {
+      void queryClient.invalidateQueries({ queryKey: ['order', user.id, id] });
+    },
+  });
   const cancel = useMutation({
     mutationFn: () => api.cancelOrder(id, order.data!.version!),
     onSuccess(value) {
@@ -336,6 +367,9 @@ function OrderDetail({
     (user.role === 'OPERATIONS' && item?.status === 'AT_STORE');
   const canCancel =
     allowedStatus && (user.role === 'OPERATIONS' || item?.store?.id === user.storeId);
+  const canReassign =
+    user.role === 'OPERATIONS' && (item?.status === 'ASSIGNED' || item?.status === 'AT_STORE');
+  const busy = cancel.isPending || reassign.isPending || order.isFetching;
 
   return (
     <section className="order-detail" aria-labelledby="detail-title">
@@ -346,7 +380,7 @@ function OrderDetail({
           Fechar detalhe
         </Button>
       </div>
-      <ErrorMessage error={order.error ?? cancel.error} />
+      <ErrorMessage error={order.error ?? cancel.error ?? reassign.error} />
       {order.isPending && <p role="status">Carregando detalhe...</p>}
       {item && (
         <>
@@ -391,20 +425,23 @@ function OrderDetail({
           <ol className="order-timeline">
             {item.timeline?.map((event) => (
               <li key={event.id}>
-                <span>{statusLabel(event.toStatus)}</span>
+                <span>{eventLabels[event.type] ?? statusLabel(event.toStatus)}</span>
                 <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
               </li>
             ))}
           </ol>
-          {canCancel && (
-            <Button
-              variant="outline"
-              disabled={cancel.isPending || order.isFetching}
-              onClick={() => cancel.mutate()}
-            >
-              {cancel.isPending ? 'Cancelando...' : 'Cancelar pedido'}
-            </Button>
-          )}
+          <div className="role-options">
+            {canCancel && (
+              <Button variant="outline" disabled={busy} onClick={() => cancel.mutate()}>
+                {cancel.isPending ? 'Cancelando...' : 'Cancelar pedido'}
+              </Button>
+            )}
+            {canReassign && (
+              <Button variant="outline" disabled={busy} onClick={() => reassign.mutate()}>
+                {reassign.isPending ? 'Redistribuindo...' : 'Redistribuir pedido'}
+              </Button>
+            )}
+          </div>
         </>
       )}
     </section>

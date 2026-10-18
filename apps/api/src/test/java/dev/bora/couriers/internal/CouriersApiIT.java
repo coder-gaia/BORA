@@ -244,6 +244,83 @@ class CouriersApiIT {
   }
 
   @Test
+  void fencesQueuedFuturePointsAcrossReservationsAssignmentsAndReleases() throws Exception {
+    try (var browser = online()) {
+      UUID courier =
+          UUID.fromString(
+              CourierHttpFixture.json(browser.get(port, "/courier/me")).path("id").asString());
+      Instant before = CourierHttpFixture.recorded(browser.get(port, "/courier/me"));
+      long epoch = epoch(courier);
+      var future =
+          new PositionSample(
+              Instant.now().plusSeconds(4).truncatedTo(ChronoUnit.MICROS),
+              CourierHttpFixture.NEARBY);
+      assertThat(browser.positions(secondPort, List.of(future)).statusCode()).isEqualTo(202);
+      var transaction = new TransactionTemplate(transactions);
+      transaction.executeWithoutResult(
+          status -> {
+            directory.transition(courier, new CourierCommand.ReceiveOffer());
+            directory.transition(courier, new CourierCommand.AcceptOffer());
+            directory.transition(courier, new CourierCommand.ReassignOrder());
+            directory.transition(courier, new CourierCommand.ReceiveOffer());
+            directory.transition(courier, new CourierCommand.AcceptOffer());
+          });
+      assertThat(epoch(courier)).isEqualTo(epoch + 5);
+      secondBuffer.flush();
+      assertThat(CourierHttpFixture.recorded(browser.get(port, "/courier/me"))).isEqualTo(before);
+      assertThat(observation.events).isEmpty();
+      assertThat(browser.positions(port, List.of(future)).statusCode()).isEqualTo(202);
+      buffer.flush();
+      assertThat(CourierHttpFixture.recorded(browser.get(secondPort, "/courier/me")))
+          .isEqualTo(future.recordedAt());
+      assertThat(observation.events.getLast().epochs().get(courier)).isEqualTo(epoch + 5);
+    }
+  }
+
+  @Test
+  void incrementsEpochForEveryActualReleaseAndKeepsRepeatedReleasesIdempotent() throws Exception {
+    try (var browser = online()) {
+      UUID courier =
+          UUID.fromString(
+              CourierHttpFixture.json(browser.get(port, "/courier/me")).path("id").asString());
+      var transaction = new TransactionTemplate(transactions);
+      for (CourierCommand release :
+          List.of(
+              new CourierCommand.RejectOffer(),
+              new CourierCommand.ExpireOffer(),
+              new CourierCommand.CancelOffer(),
+              new CourierCommand.CompleteDelivery(),
+              new CourierCommand.CancelOrder(),
+              new CourierCommand.ReassignOrder())) {
+        boolean assigned =
+            release instanceof CourierCommand.CompleteDelivery
+                || release instanceof CourierCommand.CancelOrder
+                || release instanceof CourierCommand.ReassignOrder;
+        long before = epoch(courier);
+        transaction.executeWithoutResult(
+            status -> {
+              directory.transition(courier, new CourierCommand.ReceiveOffer());
+              if (assigned) directory.transition(courier, new CourierCommand.AcceptOffer());
+              directory.transition(courier, release);
+            });
+        long after = epoch(courier);
+        assertThat(after).isEqualTo(before + (assigned ? 3 : 2));
+        long version = directory.find(courier).version();
+        transaction.executeWithoutResult(status -> directory.transition(courier, release));
+        assertThat(epoch(courier)).isEqualTo(after);
+        assertThat(directory.find(courier).version()).isEqualTo(version);
+      }
+    }
+  }
+
+  private long epoch(UUID courier) {
+    return jdbc.sql("SELECT position_epoch FROM couriers WHERE id=:id")
+        .param("id", courier)
+        .query(Long.class)
+        .single();
+  }
+
+  @Test
   void bulkFlushFiltersStaleAndEarlierEpochRowsWithoutLosingValidCourierSamples() throws Exception {
     try (var valid = online();
         var disabled = online();

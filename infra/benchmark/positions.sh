@@ -5,14 +5,19 @@ source_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 case $(uname -s) in
   MINGW*|MSYS*) source_root=$(cygpath -m "$source_root"); export MSYS_NO_PATHCONV=1 ;;
 esac
-[[ $# == 0 ]] || { printf '%s\n' 'Uso: bash infra/benchmark/positions.sh' >&2; exit 2; }
+benchmark_kind=${BORA_BENCHMARK_KIND:-positions}
+case $benchmark_kind in
+  positions|dispatch) ;;
+  *) printf '%s\n' 'Benchmark desconhecido.' >&2; exit 2 ;;
+esac
+[[ $# == 0 ]] || { printf 'Uso: bash infra/benchmark/%s.sh\n' "$benchmark_kind" >&2; exit 2; }
 [[ $(docker info --format '{{.OSType}}') == linux ]] || {
   printf '%s\n' 'Ative o Docker com containers Linux antes de medir.' >&2
   exit 1
 }
 
 run_id="$(date +%Y%m%d-%H%M%S)-$$"
-runner="bora-positions-benchmark-$run_id"
+runner="bora-$benchmark_kind-benchmark-$run_id"
 work_volume="$runner-work"
 cache_volume=bora-positions-benchmark-m2
 runner_image=bora-positions-benchmark-jdk:25.0.4.1
@@ -22,7 +27,7 @@ runner_cpus=${BORA_BENCHMARK_CPUS:-4}
   printf '%s\n' 'BORA_BENCHMARK_CPUS deve ser um inteiro entre 1 e 99.' >&2
   exit 2
 }
-results="$source_root/target/benchmarks/positions/$run_id"
+results="$source_root/target/benchmarks/$benchmark_kind/$run_id"
 mkdir -p "$results"
 
 # shellcheck disable=SC2329 # A chamada ocorre pelo trap EXIT.
@@ -60,6 +65,7 @@ docker create --name "$runner" --network bridge --cpus "$runner_cpus" --memory 3
   --env "BORA_BENCHMARK_WAIT=${BORA_BENCHMARK_WAIT:-false}" \
   --env "BORA_BENCHMARK_DIAGNOSTICS=${BORA_BENCHMARK_DIAGNOSTICS:-false}" \
   --env "BORA_BENCHMARK_CPUS=$runner_cpus" \
+  --env "BORA_BENCHMARK_KIND=$benchmark_kind" \
   "$runner_image" >/dev/null
 printf 'Executor: %s\nRelatórios: %s\n' "$runner" "$results"
 
@@ -68,7 +74,12 @@ docker start --attach "$runner" 2>&1 | tee "$results/console.log"
 attached_status=${PIPESTATUS[0]}
 set -e
 container_status=$(docker inspect --format '{{.State.ExitCode}}' "$runner")
-for artifact in courier-positions-benchmark.json courier-positions-warmup.json courier-positions-diagnostic.jfr; do
+if [[ $benchmark_kind == dispatch ]]; then
+  artifacts=(dispatch-concurrency-benchmark.json)
+else
+  artifacts=(courier-positions-benchmark.json courier-positions-warmup.json courier-positions-diagnostic.jfr)
+fi
+for artifact in "${artifacts[@]}"; do
   docker cp "$runner:/workspace/apps/api/target/$artifact" "$results/$artifact" 2>/dev/null || true
 done
 docker cp "$runner:/workspace/benchmark-context.json" "$results/context.json" 2>/dev/null || true

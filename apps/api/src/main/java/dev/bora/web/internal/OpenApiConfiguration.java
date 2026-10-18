@@ -62,6 +62,7 @@ class OpenApiConfiguration {
                       "Token devolvido por GET /api/v1/auth/csrf, vinculado ao cookie da mesma sessão. Obtenha outro após entrar, trocar de papel ou sair."))
           .addSchemas("ApiProblem", problemSchema());
       nullable(components, "SessionView", "user");
+      nullable(components, "CourierOfferInbox", "offer");
       nullable(components, "DemoUserView", "storeId", "courierId");
       nullable(components, "OrderSummary", "courierId");
       nullable(components, "OrderView", "courierId", "confirmationCode");
@@ -143,7 +144,7 @@ class OpenApiConfiguration {
                                       operation.getResponses(),
                                       "404",
                                       "O recurso não existe ou não está visível neste contexto.");
-                              case "cancelOrder" -> {
+                              case "cancelOrder", "reassignOrder" -> {
                                 error(
                                     operation.getResponses(),
                                     "400",
@@ -156,6 +157,20 @@ class OpenApiConfiguration {
                                     operation.getResponses(),
                                     "409",
                                     "A versão ou a etapa do pedido mudou. Consulte o pedido novamente.");
+                              }
+                              case "acceptOffer", "rejectOffer" -> {
+                                error(
+                                    operation.getResponses(),
+                                    "400",
+                                    "Confira o identificador da oferta.");
+                                error(
+                                    operation.getResponses(),
+                                    "404",
+                                    "A oferta não existe ou não pertence ao entregador autenticado.");
+                                error(
+                                    operation.getResponses(),
+                                    "409",
+                                    "A oferta encerrou ou o pedido e o entregador mudaram. Consulte seu trabalho novamente.");
                               }
                               case "setCourierAvailability" -> {
                                 error(

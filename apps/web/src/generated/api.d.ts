@@ -102,6 +102,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/courier/offer': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Consultar a oferta atual do entregador */
+    get: operations['getCourierOffer'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/courier/positions': {
     parameters: {
       query?: never;
@@ -150,6 +167,57 @@ export interface paths {
     get: operations['getCourierWork'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/offers/{id}/accept': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Aceitar uma oferta dentro do prazo */
+    post: operations['acceptOffer'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/offers/{id}/reject': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Recusar uma oferta dentro do prazo */
+    post: operations['rejectOffer'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/ops/orders/{id}/reassign': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Redistribuir um pedido da operação */
+    post: operations['reassignOrder'];
     delete?: never;
     options?: never;
     head?: never;
@@ -310,6 +378,28 @@ export interface components {
       /** Formato: int64 */
       expectedVersion: number;
     };
+    CourierOffer: {
+      /** Formato: date-time */
+      createdAt: string;
+      dropoff: components['schemas']['GeoPoint'];
+      /**
+       * Format: int32
+       * @description Tempo até a loja em segundos, já ajustado à velocidade da simulação.
+       */
+      etaToPickupSeconds: number;
+      /** Formato: date-time */
+      expiresAt: string;
+      /** Formato: uuid */
+      id: string;
+      /** Formato: uuid */
+      orderId: string;
+      store: components['schemas']['StoreView'];
+    };
+    CourierOfferInbox: {
+      offer: components['schemas']['CourierOffer'] | null;
+      /** Formato: date-time */
+      serverTime: string;
+    };
     CourierRouteView: {
       /** @enum {string} */
       destination: 'DROPOFF' | 'PICKUP';
@@ -457,6 +547,10 @@ export interface components {
       position: components['schemas']['GeoPoint'];
       /** Formato: date-time */
       recordedAt: string;
+    };
+    ReassignOrderRequest: {
+      /** Formato: int64 */
+      expectedVersion: number;
     };
     SessionView: {
       authenticated: boolean;
@@ -715,6 +809,44 @@ export interface operations {
       };
     };
   };
+  getCourierOffer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          '*/*': components['schemas']['CourierOfferInbox'];
+        };
+      };
+      /** @description Entre na demonstração para continuar. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O papel ou a sessão não permite esta ação. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
   submitCourierPositions: {
     parameters: {
       query?: never;
@@ -898,6 +1030,205 @@ export interface operations {
       };
       /** @description O papel ou a sessão não permite esta ação. */
       403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
+  acceptOffer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Ação concluída. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Confira o identificador da oferta. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Entre na demonstração para continuar. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O token CSRF ou o papel não permite esta ação. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description A oferta não existe ou não pertence ao entregador autenticado. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description A oferta encerrou ou o pedido e o entregador mudaram. Consulte seu trabalho novamente. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
+  rejectOffer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Ação concluída. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Confira o identificador da oferta. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Entre na demonstração para continuar. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O token CSRF ou o papel não permite esta ação. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description A oferta não existe ou não pertence ao entregador autenticado. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description A oferta encerrou ou o pedido e o entregador mudaram. Consulte seu trabalho novamente. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
+  reassignOrder: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReassignOrderRequest'];
+      };
+    };
+    responses: {
+      /** @description Ação concluída. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Confira o pedido e sua versão. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Entre na demonstração para continuar. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O token CSRF ou o papel não permite esta ação. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O pedido não existe ou não está visível neste contexto. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description A versão ou a etapa do pedido mudou. Consulte o pedido novamente. */
+      409: {
         headers: {
           [name: string]: unknown;
         };

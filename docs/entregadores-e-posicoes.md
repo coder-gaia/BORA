@@ -51,12 +51,45 @@ próprio de dez tentativas por minuto por entregador. Somente pedidos públicos 
 
 Pedido, evento e liberação do entregador pertencem à mesma transação. Cancelamento e
 redistribuição usam a mesma coordenação de recursos. A ordem dos locks é pedido, ofertas e
-entregador, preservada na futura etapa de despacho.
+entregador, preservada também pelo despacho.
 
 `dispatch` mantém a limpeza de ofertas pendentes: cancelar o pedido cancela a reserva na mesma
 transação, e uma varredura libera ofertas cujo prazo expirou. Essa base permite que uma versão
-anterior lide com reservas criadas pela seguinte durante uma publicação ou rollback. A busca
-automática e as respostas às ofertas entram no M06.
+anterior lide com reservas criadas pela seguinte durante uma publicação ou rollback.
+
+## Ofertas e redistribuição
+
+O despacho tenta pedidos a cada 500 ms, com até vinte transações independentes por ciclo.
+O raio começa em dois quilômetros e dobra até oito quando não há candidato com rota válida.
+As novas tentativas sem candidato aguardam cinco segundos. Depois de três minutos de busca,
+um evento `ORDER_SEARCH_DELAYED` registra o alerta uma única vez na linha do tempo.
+
+Entregadores precisam estar disponíveis, com posição persistida há no máximo trinta segundos.
+Os oito mais próximos dentro do raio são classificados pelo tempo de rota simulado até a loja.
+As posições são revalidadas ao reservar. A geração persistida muda também na reserva, aceite
+e liberação: um lote antigo de outra API não pode mover uma atribuição nova nem marcar chegada.
+Entregadores privados participam somente dos pedidos do próprio contexto de demonstração.
+Pedidos públicos exigem loja simulada; contextos encerrados não geram novas ofertas.
+
+`GET /api/v1/courier/offer` retorna `{offer, serverTime}`. Sem oferta ativa, `offer` é `null`.
+Uma oferta contém loja, destino, ETA e prazo de trinta segundos; não contém o código de entrega.
+`POST /api/v1/offers/{id}/accept` e `/reject` respondem `204` quando concluídos. Uma oferta
+de outro entregador responde `404`. Prazo vencido ou estado alterado responde `409`; o servidor
+persiste a expiração e libera a reserva mesmo quando o aceite chega depois do prazo.
+
+Aceitar atribui o pedido e deixa o entregador ocupado na mesma transação. Recusar ou expirar
+libera o entregador e permite nova tentativa. O mesmo pedido não volta a oferecer a um
+entregador que já o aceitou, recusou ou deixou expirar. A operação pode solicitar
+`POST /api/v1/ops/orders/{id}/reassign` com a versão atual em `expectedVersion`, antes da coleta.
+A redistribuição libera a atribuição anterior e reinicia a busca; alterações concorrentes exigem
+atualizar a tela antes de tentar novamente.
+
+A interface consulta ofertas enquanto está visível. A contagem usa o horário do servidor e
+não autoriza decisões: aceitar, recusar e redistribuir sempre passam pelas validações do backend.
+O envio manual consulta esse horário imediatamente antes de registrar a posição e mede o tempo
+decorrido com relógio monotônico. Assim, adiantar ou atrasar o relógio do navegador não transforma
+uma posição coletada agora em uma posição antiga ou futura. O recebimento e a persistência
+continuam sendo verificados separadamente.
 
 ## Verificações
 
@@ -111,3 +144,31 @@ conferidas no banco; o buffer esvaziou e o maior atraso de gravação foi 617 ms
 aquecimento. O aquecimento teve 1.741 descartes antes do envio e zero erros HTTP, registrados
 separadamente da medição. O [relatório versionado](benchmarks/m05-positions.json) preserva os
 resultados, a configuração do executor e o hash dos fontes medidos.
+
+## Verificar concorrência do despacho
+
+Com o Docker Linux ativo, execute em uma janela sem outros builds ou testes:
+
+```bash
+bash infra/benchmark/dispatch.sh
+```
+
+O executor isolado usa quatro CPUs, 3 GiB e dois contextos Spring independentes, cada um com
+seu próprio pool de cinco conexões para o mesmo PostgreSQL real. O cenário executa dez mil
+rodadas concorrentes, divididas igualmente entre disputa de reserva, aceite duplo, decisão
+contra recusa/expiração/cancelamento e coleta contra redistribuição. Cada par começa em uma
+barreira; as invariantes são conferidas no banco após cada rodada. O teste também encerra os
+dois contextos e abre outro para verificar a recuperação de um prazo persistido, com a criação
+de novas ofertas bloqueada.
+
+O teste falha diante de atribuição ou oferta duplicada, resultado inesperado ou prazo perdido.
+Os resultados ficam em `target/benchmarks/dispatch/<execução>/`, com relatório JSON, contexto
+e console. Esse ensaio verifica a correção transacional com o pequeno recorte de ruas de teste;
+não mede vazão HTTP ou capacidade de produção.
+
+Em 18/10/2026, as dez mil rodadas concluíram com todas as invariantes atendidas e zero violações
+nas cinco consultas globais finais. Cada família executou 2.500 rodadas. O reinício dos contextos
+preservou o prazo original e a varredura liberou a reserva com a criação bloqueada. O ensaio
+levou 143,6 segundos; o [relatório versionado](benchmarks/dispatch-concurrency.json) preserva o
+perfil, o hash dos fontes e os resultados. Esse tempo descreve a execução local de correção
+concorrente, sem representar uma meta de latência da aplicação.

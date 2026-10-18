@@ -1,3 +1,4 @@
+import { chooseRole } from './demo';
 import { expect, test } from '@playwright/test';
 
 test('cria pedido privado, preserva o contexto na troca de papel e cancela pela operação', async ({
@@ -6,7 +7,7 @@ test('cria pedido privado, preserva o contexto na troca de papel e cancela pela 
   baseURL,
 }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Sou loja', exact: true }).click();
+  await chooseRole(page, 'Sou loja');
   await expect(page.getByRole('heading', { name: 'Novo pedido' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Criar pedido', exact: true })).toBeEnabled();
 
@@ -40,7 +41,7 @@ test('cria pedido privado, preserva o contexto na troca de papel e cancela pela 
   try {
     const outsider = await other.newPage();
     await outsider.goto('/');
-    await outsider.getByRole('button', { name: 'Operação', exact: true }).click();
+    await chooseRole(outsider, 'Operação');
     await expect(outsider.getByText('A sessão expira', { exact: false })).toBeVisible();
     const forbidden = await other.request.get(`/api/v1/orders/${created.id}`);
     expect(forbidden.status()).toBe(404);
@@ -48,7 +49,7 @@ test('cria pedido privado, preserva o contexto na troca de papel e cancela pela 
     await other.close();
   }
 
-  await page.getByRole('button', { name: 'Operação', exact: true }).click();
+  await chooseRole(page, 'Operação');
   await expect(page.getByRole('button', { name: 'Operação', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
@@ -70,7 +71,7 @@ test('cria pedido privado, preserva o contexto na troca de papel e cancela pela 
 
 test('repete a chave de idempotência quando a resposta da criação é perdida', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Sou loja', exact: true }).click();
+  await chooseRole(page, 'Sou loja');
   await expect(page.getByRole('button', { name: 'Criar pedido', exact: true })).toBeEnabled();
 
   let originalId: string | undefined;

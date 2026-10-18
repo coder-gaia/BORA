@@ -83,11 +83,24 @@ class OpenApiContractIT {
               "/api/v1/courier/positions",
               "/api/v1/courier/work",
               "/api/v1/courier/route",
+              "/api/v1/courier/offer",
+              "/api/v1/offers/{id}/accept",
+              "/api/v1/offers/{id}/reject",
+              "/api/v1/ops/orders/{id}/reassign",
               "/api/v1/orders/{id}/pickup",
               "/api/v1/orders/{id}/deliver")) {
         assertThat(contract.path("paths").has(endpoint)).as(endpoint).isTrue();
       }
       JsonNode paths = contract.path("paths");
+      for (String endpoint :
+          List.of(
+              "/api/v1/offers/{id}/accept",
+              "/api/v1/offers/{id}/reject",
+              "/api/v1/ops/orders/{id}/reassign")) {
+        assertThat(paths.path(endpoint).path("post").path("responses").has("204"))
+            .as(endpoint)
+            .isTrue();
+      }
       assertThat(paths.path("/api/v1/orders").path("post").path("responses").has("201")).isTrue();
       assertThat(paths.path("/api/v1/courier/positions").path("post").path("responses").has("202"))
           .isTrue();

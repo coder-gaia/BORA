@@ -124,6 +124,26 @@ write_upstream_mode() {
   mv -f "$temporary" "$BORA_CONFIG_DIR/upstream-mode"
 }
 
+write_dispatch_version() {
+  local version=$1 temporary
+  if [[ $version != disabled ]]; then validate_version "$version" || return 1; fi
+  mkdir -p "$BORA_CONFIG_DIR" || return 1
+  chmod 755 "$BORA_CONFIG_DIR" || return 1
+  temporary=$(mktemp "$BORA_CONFIG_DIR/.dispatch-version.XXXXXX") || return 1
+  printf '%s\n' "$version" > "$temporary" || return 1
+  chmod 644 "$temporary" || return 1
+  mv -f "$temporary" "$BORA_CONFIG_DIR/dispatch-version"
+}
+
+resume_dispatch() {
+  if [[ $API1_VERSION == "$BUNDLE_VERSION" && $API2_VERSION == "$BUNDLE_VERSION" \
+    && $WEB_VERSION == "$BUNDLE_VERSION" ]]; then
+    write_dispatch_version "$BUNDLE_VERSION"
+  else
+    write_dispatch_version disabled
+  fi
+}
+
 apply_proxy_config() {
   local upstreams=${1:-'api1:8080 api2:8080'} mode caddy_id
   mode=$(upstream_mode "$upstreams") || return 1
@@ -227,6 +247,7 @@ restore_previous() {
   read_state "$state_file" PREVIOUS || return 1
   select_bundle "$PREVIOUS_BUNDLE_VERSION" || return 1
   [[ $DB_VERSION == "$PREVIOUS_DB_VERSION" ]] || fail 'Rollback não pode trocar a versão do banco.' || return 1
+  write_dispatch_version disabled || return 1
   prepare_routing_graph || return 1
   copy_proxy_config || return 1
   if service_ready api1; then
@@ -245,6 +266,7 @@ restore_previous() {
   activate_web "$PREVIOUS_WEB_VERSION" || return 1
   set_upstreams 'api1:8080 api2:8080' || return 1
   public_smoke || return 1
+  resume_dispatch || return 1
   write_state "$BORA_ROOT/state.env"
 }
 

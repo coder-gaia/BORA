@@ -21,8 +21,14 @@ source_sha=$(
 [[ $source_sha =~ ^[0-9a-f]{64}$ ]]
 runner_cpus=${BORA_BENCHMARK_CPUS:-4}
 [[ $runner_cpus =~ ^[1-9][0-9]?$ ]]
-printf '{"sourceSha256":"%s","cpus":%s,"memoryBytes":3221225472,"databasePath":"IP interno do PostgreSQL na bridge Docker, porta 5432","controlHost":"%s"}\n' \
-  "$source_sha" "$runner_cpus" "$TESTCONTAINERS_HOST_OVERRIDE" > /workspace/benchmark-context.json
+benchmark_kind=${BORA_BENCHMARK_KIND:-positions}
+case $benchmark_kind in
+  positions) benchmark_class=CourierPositionsBenchmark ;;
+  dispatch) benchmark_class=DispatchConcurrencyBenchmark ;;
+  *) exit 2 ;;
+esac
+printf '{"sourceSha256":"%s","benchmark":"%s","cpus":%s,"memoryBytes":3221225472,"databasePath":"IP interno do PostgreSQL na bridge Docker, porta 5432","controlHost":"%s"}\n' \
+  "$source_sha" "$benchmark_kind" "$runner_cpus" "$TESTCONTAINERS_HOST_OVERRIDE" > /workspace/benchmark-context.json
 
 common=(--batch-mode --no-transfer-progress -Dmaven.repo.local=/m2/repository -Dspotless.skip=true)
 ./mvnw "${common[@]}" -pl apps/api -am -DskipTests test-compile
@@ -36,5 +42,5 @@ fi
   "-Dbora.benchmark.diagnostics=${BORA_BENCHMARK_DIAGNOSTICS:-false}" \
   "-Dbora.benchmark.source-sha256=$source_sha" \
   "-Dbora.postgis.image=${BORA_BENCHMARK_DB_IMAGE:-bora-postgis:18.6-3.6.4}" \
-  -Dit.test=CourierPositionsBenchmark -Dfailsafe.failIfNoSpecifiedTests=false \
+  "-Dit.test=$benchmark_class" -Dfailsafe.failIfNoSpecifiedTests=false \
   failsafe:integration-test failsafe:verify

@@ -97,8 +97,8 @@ compartilham sessões no PostgreSQL. O Tomcat interpreta os cabeçalhos encaminh
 Caddy usando `SERVER_FORWARD_HEADERS_STRATEGY=native`; o proxy substitui os cabeçalhos de
 origem enviados pelo cliente antes de encaminhá-los.
 
-O diretório `/opt/bora/config` usa `0755` e contém somente a configuração pública do Caddy,
-em arquivo `0644`. Isso permite que o container sem capabilities leia o bind mount, mesmo
+O diretório `/opt/bora/config` usa `0755` e contém somente a configuração pública do Caddy
+e os marcadores públicos de tráfego e despacho, em arquivos `0644`. Isso permite que o container sem capabilities leia o bind mount, mesmo
 com um UID diferente do usuário de deploy. Credenciais e arquivos de estado ficam fora dele.
 
 ## Configurar o GitHub
@@ -136,6 +136,19 @@ balanceamentos estáticos. O script aguarda a drenagem, troca uma instância e e
 repetindo a operação com a segunda API. Só então ativa o HTML da nova web por uma troca
 atômica de symlink. Assets com hash de releases anteriores permanecem disponíveis para páginas
 já abertas. A publicação normal da aplicação não recarrega o servidor HTTP do Caddy.
+
+Antes de substituir a primeira API, o script grava `disabled` atomicamente em
+`/opt/bora/config/dispatch-version`. A criação de ofertas exige nesse arquivo o SHA completo
+da própria API e `upstream-mode` igual a `both`. A substituição de cada instância pode voltar
+o proxy a `both`; por isso esse modo sozinho não libera o despacho. O marcador de despacho
+só abre após o teste público com APIs e web na mesma versão. Um marcador ausente, inválido
+ou de outra versão mantém a criação bloqueada. Expiração, cancelamento e respostas às ofertas
+persistidas continuam disponíveis.
+
+As APIs montam o diretório de configuração completo somente para leitura. Assim, as trocas
+atômicas dos arquivos ficam visíveis sem recriar o bind mount. Na recuperação, o script fecha
+primeiro o marcador e só o reabre se o bundle, as duas APIs e a web restaurados coincidirem.
+O ambiente local libera a criação explicitamente; produção exige a ativação por versão.
 
 O Caddyfile só é substituído quando seu conteúdo muda. Essa mudança real exige reload e pode
 encerrar conexões HTTP ociosas; a recuperação para um bundle com configuração antiga também
@@ -208,7 +221,9 @@ bash infra/deploy/test.sh
 ```
 
 O mesmo launcher pode receber `BORA_TEST_API_IMAGE`, `BORA_TEST_WEB_IMAGE` e
-`BORA_TEST_DB_IMAGE` para usar as imagens já construídas pelo CI. Ele prepara o executor Linux,
+`BORA_TEST_DB_IMAGE` para usar as imagens já construídas pelo CI. As variáveis opcionais
+`BORA_TEST_PREVIOUS_API_IMAGE` e `BORA_TEST_PREVIOUS_WEB_IMAGE` permitem fornecer imagens
+efetivamente diferentes para a versão anterior. Ele prepara o executor Linux,
 testa bootstrap, atualização, recuperação automática e rollback manual, e remove os containers e volumes do
 projeto de teste. Nenhum recurso do ambiente de desenvolvimento é usado como destino.
 
@@ -218,16 +233,22 @@ servidor HTTP não foi recarregado durante as trocas normais. O cliente também 
 demonstração e exige que a mesma identidade continue autenticada entre as duas APIs e após
 os rollbacks. Esse resultado descreve as
 condições exercitadas no teste, sem garantir disponibilidade absoluta da VM ou do provedor.
-As tags válidas do cenário usam a mesma imagem de origem; a prova de sessão cobre a troca
-de processos. A compatibilidade entre versões diferentes também depende das migrações
+Por padrão, as tags válidas do cenário usam a mesma imagem de origem; a prova de sessão cobre
+a troca de processos. Quando as variáveis de versão anterior são fornecidas, o mesmo ensaio
+troca as imagens efetivas. A compatibilidade entre versões diferentes também depende das migrações
 aditivas e da validação da atualização real.
 
-Na validação local de 18/10/2026 em amd64, o cliente Node completou 17.604 requisições em
-300 segundos, sem falhas de HTTP, conexão ou identidade. Outras 2.668 consultas curl receberam
+Na validação local de 18/10/2026 em amd64, com imagens anteriores e novas distintas, o cliente
+Node completou 17.581 requisições em 300 segundos, sem falhas de HTTP, conexão ou identidade.
+Outras 2.786 consultas curl receberam
 HTTP 200 durante a atualização, a falha simulada e os rollbacks automático e manual.
 O teste também confirmou o
 lock de concorrência, a repetição idempotente de uma release, a falha de download sem perder
 o rollback anterior e a preservação dos containers do Caddy e do banco.
+Durante a troca, 82 consultas confirmaram ausência de ofertas com o marcador fechado; 41 delas
+observaram a API nova saudável. Depois da ativação, a oferta foi criada. O rollback para as
+imagens anteriores preservou o prazo de outra oferta, que expirou e liberou o entregador pela
+varredura da versão restaurada.
 
 ## Monitorar
 

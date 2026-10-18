@@ -58,21 +58,26 @@ public class PendingOfferCleanup {
                     if (due.isEmpty()) return false;
                     UUID orderId = due.get();
                     Instant now = clock.instant();
-                    if (!closePending(orderId, new OfferCommand.Expire(), now)) return false;
-                    jdbc.sql(
-                            """
-            UPDATE orders SET next_attempt_at = GREATEST(created_at, :now)
-            WHERE id = :id AND status = 'SEARCHING'
-            """)
-                        .param("id", orderId)
-                        .param("now", timestamp(now))
-                        .update();
-                    return true;
+                    return expirePendingForLockedOrder(orderId, now);
                   }));
       if (!closed) break;
       expired++;
     }
     return expired;
+  }
+
+  @Transactional(propagation = Propagation.MANDATORY)
+  public boolean expirePendingForLockedOrder(UUID orderId, Instant now) {
+    if (!closePending(orderId, new OfferCommand.Expire(), now)) return false;
+    jdbc.sql(
+            """
+        UPDATE orders SET next_attempt_at = GREATEST(created_at, :now)
+        WHERE id = :id AND status = 'SEARCHING'
+        """)
+        .param("id", orderId)
+        .param("now", timestamp(now))
+        .update();
+    return true;
   }
 
   private boolean closePending(UUID orderId, OfferCommand command, Instant occurredAt) {
@@ -115,6 +120,21 @@ public class PendingOfferCleanup {
               ? new CourierCommand.ExpireOffer()
               : new CourierCommand.CancelOffer());
     }
+    jdbc.sql(
+            """
+        INSERT INTO order_events(order_id,type,payload,actor,occurred_at,order_version)
+        SELECT id,:type,jsonb_build_object('from',status,'to',status,
+          'offerId',CAST(:offer AS text),'courierId',CAST(:courier AS text),
+          'fromOfferStatus','PENDING','toOfferStatus',CAST(:status AS text)),
+          'dispatch',:now,version FROM orders WHERE id=:order
+        """)
+        .param("order", orderId)
+        .param("type", "OFFER_" + transition.next().status().name())
+        .param("offer", offer.id().toString())
+        .param("courier", offer.courierId().toString())
+        .param("status", transition.next().status().name())
+        .param("now", timestamp(response))
+        .update();
     return true;
   }
 

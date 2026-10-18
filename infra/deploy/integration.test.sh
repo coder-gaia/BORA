@@ -23,8 +23,12 @@ missing_version=4444444444444444444444444444444444444444
 bad_import_version=5555555555555555555555555555555555555555
 api_source=${BORA_TEST_API_IMAGE:-bora-dev-api:latest}
 web_source=${BORA_TEST_WEB_IMAGE:-bora-web:m01-assets}
+previous_api_source=${BORA_TEST_PREVIOUS_API_IMAGE:-$api_source}
+previous_web_source=${BORA_TEST_PREVIOUS_WEB_IMAGE:-$web_source}
 db_source=${BORA_TEST_DB_IMAGE:-bora-postgis:18.6-3.6.4}
 probe_pid=
+gate_observer_pid=
+rollback_deadline_pid=
 export BORA_ROOT=$test_root BORA_PROJECT=$project
 export BORA_COMPOSE_OVERRIDE=compose.release-test.yml
 export BORA_PUBLIC_URL=http://caddy
@@ -33,7 +37,13 @@ export BUNDLE_VERSION=$old_version
 export API1_VERSION=$old_version API2_VERSION=$old_version WEB_VERSION=$old_version DB_VERSION=$old_version
 
 cleanup() {
-  touch "$test_root/stop-probe"
+  touch "$test_root/stop-probe" "$test_root/stop-dispatch-observers"
+  for observer_pid in "$gate_observer_pid" "$rollback_deadline_pid"; do
+    if [[ -n $observer_pid ]]; then
+      kill "$observer_pid" >/dev/null 2>&1 || true
+      wait "$observer_pid" || true
+    fi
+  done
   if [[ -n $probe_pid ]]; then wait "$probe_pid" || true; fi
   docker rm --force "$persistent_probe" >/dev/null 2>&1 || true
   docker network disconnect "${project}_edge" "$HOSTNAME" >/dev/null 2>&1 || true
@@ -54,7 +64,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for image in "$api_source" "$web_source" "$db_source"; do docker image inspect "$image" >/dev/null; done
+for image in "$api_source" "$web_source" "$previous_api_source" "$previous_web_source" "$db_source"; do
+  docker image inspect "$image" >/dev/null
+done
 mkdir -p "$test_root/releases" "$test_root/config"
 # Reproduz o diretório de uma VM provisionada por outro usuário.
 # Sem acesso público de leitura, o Caddy sem capabilities não consegue iniciá-lo.
@@ -66,6 +78,7 @@ for version in "$old_version" "$new_version" "$bad_version" "$missing_version" "
     "$test_root/releases/$version/infra/"
 done
 export API_IMAGE="127.0.0.1:$registry_port/bora-test-api"
+readonly test_api_repository="$API_IMAGE"
 export WEB_IMAGE="127.0.0.1:$registry_port/bora-test-web"
 export DB_IMAGE="127.0.0.1:$registry_port/bora-test-db"
 export BORA_CONFIG_DIR="$test_root/config"
@@ -88,13 +101,15 @@ for _ in $(seq 1 30); do
     --quiet --output-document=/dev/null http://127.0.0.1:5000/v2/; then break; fi
   sleep 1
 done
-for version in "$old_version" "$new_version"; do
-  docker tag "$api_source" "$API_IMAGE:$version"
-  docker push "$API_IMAGE:$version" >/dev/null
-done
+docker tag "$previous_api_source" "$API_IMAGE:$old_version"
+docker push "$API_IMAGE:$old_version" >/dev/null
+docker tag "$api_source" "$API_IMAGE:$new_version"
+docker push "$API_IMAGE:$new_version" >/dev/null
 docker tag "$db_source" "$DB_IMAGE:$old_version"
 docker push "$DB_IMAGE:$old_version" >/dev/null
-for version in "$old_version" "$new_version" "$bad_version" "$bad_import_version"; do
+docker tag "$previous_web_source" "$WEB_IMAGE:$old_version"
+docker push "$WEB_IMAGE:$old_version" >/dev/null
+for version in "$new_version" "$bad_version" "$bad_import_version"; do
   docker tag "$web_source" "$WEB_IMAGE:$version"
   docker push "$WEB_IMAGE:$version" >/dev/null
 done
@@ -112,6 +127,31 @@ docker compose --project-name "$project" --project-directory "$test_root" \
   create db api1 api2 caddy
 docker network connect "${project}_edge" "$HOSTNAME"
 bash "$test_root/releases/$old_version/infra/deploy/deploy.sh" "$old_version"
+test "$(cat "$test_root/config/dispatch-version")" = "$old_version"
+test "$(stat -c '%a' "$test_root/config/dispatch-version")" = 644
+(
+  # shellcheck source=infra/deploy/common.sh
+  source "$test_root/releases/$old_version/infra/deploy/common.sh"
+  initialize
+  select_bundle "$old_version"
+  write_dispatch_version disabled
+  test "$(cat "$BORA_CONFIG_DIR/dispatch-version")" = disabled
+  API2_VERSION=$new_version
+  resume_dispatch
+  test "$(cat "$BORA_CONFIG_DIR/dispatch-version")" = disabled
+  API2_VERSION=$old_version
+  WEB_VERSION=$new_version
+  resume_dispatch
+  test "$(cat "$BORA_CONFIG_DIR/dispatch-version")" = disabled
+  WEB_VERSION=$old_version
+  resume_dispatch
+  test "$(cat "$BORA_CONFIG_DIR/dispatch-version")" = "$old_version"
+  if write_dispatch_version latest >/dev/null 2>&1; then
+    printf '%s\n' 'Um marcador de despacho sem SHA completo foi aceito.' >&2
+    exit 1
+  fi
+  test "$(cat "$BORA_CONFIG_DIR/dispatch-version")" = "$old_version"
+)
 exec 8> "$test_root/.deploy.lock"
 flock --nonblock 8
 if bash "$test_root/releases/$new_version/infra/deploy/deploy.sh" "$new_version" >/dev/null 2>&1; then
@@ -266,11 +306,160 @@ service_id() {
     -f "$test_root/releases/$old_version/infra/compose/compose.release-test.yml" ps --quiet "$1"
 }
 
+# As fixtures vivem somente no banco descartável deste projeto Compose.
+gate_order=72000000-0000-4000-8000-000000000001
+gate_courier=71000000-0000-4000-8000-000000000001
+rollback_order=72000000-0000-4000-8000-000000000002
+rollback_courier=71000000-0000-4000-8000-000000000002
+
+dispatch_sql() {
+  docker exec --interactive --env PGCONNECT_TIMEOUT=3 \
+    --env 'PGOPTIONS=-c statement_timeout=3000 -c lock_timeout=2000' \
+    "$db_before" psql --no-psqlrc --quiet --tuples-only --no-align \
+    --username bora --dbname bora --set ON_ERROR_STOP=1 "$@"
+}
+
+create_dispatch_fixture() {
+  local order_id=$1 courier_id=$2 result
+  result=$(dispatch_sql --set "order_id=$order_id" --set "courier_id=$courier_id" \
+    --set "public_code=dispatch-$order_id" <<'BORA_DISPATCH_FIXTURE'
+BEGIN;
+INSERT INTO couriers(id,name,status,location,location_updated_at,simulated)
+SELECT :'courier_id'::uuid,'Entregador do teste de implantação','AVAILABLE',location,clock_timestamp(),true
+FROM stores WHERE simulated ORDER BY id LIMIT 1;
+INSERT INTO orders(id,public_code,store_id,dropoff,status,sla_deadline,next_attempt_at,created_at)
+SELECT :'order_id'::uuid,:'public_code',id,location,'SEARCHING',
+  clock_timestamp()+interval '30 minutes',clock_timestamp(),clock_timestamp()-interval '1 second'
+FROM stores WHERE simulated ORDER BY id LIMIT 1;
+COMMIT;
+SELECT (SELECT count(*) FROM orders WHERE id=:'order_id'::uuid),
+  (SELECT count(*) FROM couriers WHERE id=:'courier_id'::uuid);
+BORA_DISPATCH_FIXTURE
+  )
+  [[ $result == '1|1' ]]
+}
+
+refresh_dispatch_position() {
+  dispatch_sql --set "courier_id=$1" <<'BORA_DISPATCH_POSITION'
+UPDATE couriers SET location_updated_at=clock_timestamp() WHERE id=:'courier_id'::uuid;
+BORA_DISPATCH_POSITION
+}
+
+fixture_offer_state() {
+  dispatch_sql --set "order_id=$1" <<'BORA_DISPATCH_STATE'
+SELECT COALESCE((SELECT status FROM offers WHERE order_id=:'order_id'::uuid
+  ORDER BY created_at DESC,id DESC LIMIT 1),'NONE');
+BORA_DISPATCH_STATE
+}
+
+wait_pending_fixture() {
+  local order_id=$1 courier_id=$2 deadline=$((SECONDS+12)) status
+  while (( SECONDS < deadline )); do
+    refresh_dispatch_position "$courier_id"
+    status=$(fixture_offer_state "$order_id")
+    if [[ $status == PENDING ]]; then return 0; fi
+    [[ $status == NONE ]] || {
+      printf 'Oferta da fixture terminou antes da verificação: %s\n' "$status" >&2
+      return 1
+    }
+    sleep 0.25
+  done
+  printf '%s\n' 'O despacho não criou a oferta após a ativação do SHA novo.' >&2
+  return 1
+}
+
+observe_closed_dispatch_gate() {
+  local deadline=$((SECONDS+120)) before after offers checks=0 new_healthy_checks=0 api_container image_health
+  while [[ $(cat "$test_root/config/dispatch-version") != disabled ]]; do
+    [[ ! -e $test_root/stop-dispatch-observers ]] || return 1
+    (( SECONDS < deadline )) || return 1
+    sleep 0.1
+  done
+  create_dispatch_fixture "$gate_order" "$gate_courier"
+  while (( SECONDS < deadline )); do
+    [[ ! -e $test_root/stop-dispatch-observers ]] || return 1
+    before=$(cat "$test_root/config/dispatch-version")
+    if [[ $before == "$new_version" ]]; then
+      (( checks >= 2 && new_healthy_checks >= 1 )) || {
+        printf '%s\n' 'Não houve janela observada com a API nova saudável e o despacho fechado.' >&2
+        return 1
+      }
+      printf 'Gate fechado: %s consultas sem ofertas, %s com a API nova saudável.\n' \
+        "$checks" "$new_healthy_checks"
+      return 0
+    fi
+    [[ $before == disabled ]] || return 1
+    refresh_dispatch_position "$gate_courier"
+    offers=$(dispatch_sql --set "order_id=$gate_order" <<'BORA_GATE_OFFERS'
+SELECT count(*) FROM offers WHERE order_id=:'order_id'::uuid;
+BORA_GATE_OFFERS
+    )
+    api_container=$(docker ps --filter "label=com.docker.compose.project=$project" \
+      --filter label=com.docker.compose.service=api1 --format '{{.ID}}')
+    image_health=
+    if [[ -n $api_container ]]; then
+      image_health=$(docker inspect --format \
+        '{{.Config.Image}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}' \
+        "$api_container" 2>/dev/null || true)
+    fi
+    after=$(cat "$test_root/config/dispatch-version")
+    # Um commit de ativação durante a consulta não é uma violação do gate.
+    if [[ $before == disabled && $after == disabled ]]; then
+      [[ $offers == 0 ]] || {
+        printf '%s\n' 'Uma oferta foi criada enquanto o marcador de despacho permanecia fechado.' >&2
+        return 1
+      }
+      checks=$((checks+1))
+      if [[ $image_health == "$test_api_repository:$new_version|healthy" ]]; then
+        new_healthy_checks=$((new_healthy_checks+1))
+      fi
+    fi
+    sleep 0.2
+  done
+  printf '%s\n' 'A observação do gate excedeu o prazo de implantação.' >&2
+  return 1
+}
+
+retire_gate_fixture() {
+  dispatch_sql --set "order_id=$gate_order" --set "courier_id=$gate_courier" <<'BORA_RETIRE_GATE'
+BEGIN;
+SELECT id FROM orders WHERE id=:'order_id'::uuid FOR UPDATE;
+UPDATE offers SET status='CANCELED',responded_at=GREATEST(created_at,clock_timestamp())
+WHERE order_id=:'order_id'::uuid AND status='PENDING';
+UPDATE couriers SET status='OFFLINE' WHERE id=:'courier_id'::uuid;
+UPDATE orders SET status='CANCELED',canceled_at=clock_timestamp(),next_attempt_at=NULL
+WHERE id=:'order_id'::uuid;
+COMMIT;
+BORA_RETIRE_GATE
+}
+
+keep_rollback_deadline() {
+  local deadline=$((SECONDS+120)) result
+  while [[ $(cat "$test_root/config/dispatch-version") != "$old_version" ]]; do
+    [[ ! -e $test_root/stop-dispatch-observers ]] || return 1
+    (( SECONDS < deadline )) || return 1
+    result=$(dispatch_sql --set "order_id=$rollback_order" <<'BORA_KEEP_DEADLINE'
+WITH changed AS (
+  UPDATE offers SET expires_at=clock_timestamp()+interval '15 seconds'
+  WHERE order_id=:'order_id'::uuid AND status='PENDING' RETURNING id
+) SELECT count(*) FROM changed;
+BORA_KEEP_DEADLINE
+    )
+    [[ $result == 1 ]] || {
+      printf '%s\n' 'A oferta de rollback terminou antes de as APIs anteriores estarem prontas.' >&2
+      return 1
+    }
+    touch "$test_root/rollback-deadline-ready"
+    sleep 0.5
+  done
+}
+
 # A importação precisa falhar antes de alterar o estado ou os serviços saudáveis.
 state_before_import=$(cat "$test_root/state.env")
 api1_before_import=$(service_id api1)
 api2_before_import=$(service_id api2)
 marker_before_import=$(cat "$test_root/config/upstream-mode")
+dispatch_before_import=$(cat "$test_root/config/dispatch-version")
 test ! -e "$test_root/previous.env"
 if bash "$test_root/releases/$bad_import_version/infra/deploy/deploy.sh" "$bad_import_version"; then
   printf '%s\n' 'A imagem sem o JAR do importador foi aceita incorretamente.' >&2
@@ -283,15 +472,28 @@ test "$(service_id api2)" = "$api2_before_import"
 test "$(service_id caddy)" = "$caddy_before"
 test "$(service_id db)" = "$db_before"
 test "$(cat "$test_root/config/upstream-mode")" = "$marker_before_import"
+test "$(cat "$test_root/config/dispatch-version")" = "$dispatch_before_import"
 test "$(docker exec "$caddy_before" wget --quiet --output-document=- \
   http://127.0.0.1:2019/config/)" = "$caddy_config_before"
 
+observe_closed_dispatch_gate > "$test_root/dispatch-gate.log" 2>&1 &
+gate_observer_pid=$!
 bash "$test_root/releases/$new_version/infra/deploy/deploy.sh" "$new_version"
+if ! wait "$gate_observer_pid"; then
+  cat "$test_root/dispatch-gate.log" >&2
+  exit 1
+fi
+gate_observer_pid=
+cat "$test_root/dispatch-gate.log"
+test "$(cat "$test_root/config/dispatch-version")" = "$new_version"
+wait_pending_fixture "$gate_order" "$gate_courier"
+retire_gate_fixture >/dev/null
 grep -Fxq "API1_VERSION=$new_version" "$test_root/state.env"
 grep -Fxq "API2_VERSION=$new_version" "$test_root/state.env"
 grep -Fxq "WEB_VERSION=$new_version" "$test_root/state.env"
 grep -Fxq "DB_VERSION=$old_version" "$test_root/state.env"
 bash "$test_root/releases/$new_version/infra/deploy/deploy.sh" "$new_version"
+test "$(cat "$test_root/config/dispatch-version")" = "$new_version"
 grep -Fxq "API1_VERSION=$old_version" "$test_root/previous.env"
 if bash "$test_root/releases/$missing_version/infra/deploy/deploy.sh" "$missing_version"; then
   printf '%s\n' 'A imagem ausente foi aceita incorretamente.' >&2
@@ -309,7 +511,45 @@ grep -Fxq "API2_VERSION=$new_version" "$test_root/state.env"
 grep -Fxq "WEB_VERSION=$new_version" "$test_root/state.env"
 grep -Fxq "DB_VERSION=$old_version" "$test_root/state.env"
 
+create_dispatch_fixture "$rollback_order" "$rollback_courier"
+wait_pending_fixture "$rollback_order" "$rollback_courier"
+# Renova somente a fixture até o SHA antigo ser publicado. O último prazo fica no banco,
+# atravessa a troca dos dois processos e depois expira sem novas alterações do teste.
+keep_rollback_deadline > "$test_root/dispatch-rollback.log" 2>&1 &
+rollback_deadline_pid=$!
+for _ in $(seq 1 20); do
+  [[ ! -e $test_root/rollback-deadline-ready ]] || break
+  kill -0 "$rollback_deadline_pid"
+  sleep 0.1
+done
+test -e "$test_root/rollback-deadline-ready"
 bash "$test_root/releases/$new_version/infra/deploy/rollback.sh"
+if ! wait "$rollback_deadline_pid"; then
+  cat "$test_root/dispatch-rollback.log" >&2
+  exit 1
+fi
+rollback_deadline_pid=
+test "$(cat "$test_root/config/dispatch-version")" = "$old_version"
+# Confirma a imagem de ambos antes de esperar a expiração pelo código anterior.
+for service in api1 api2; do
+  test "$(docker inspect --format '{{.Config.Image}}' "$(service_id "$service")")" = "$test_api_repository:$old_version"
+done
+rollback_expiry_deadline=$((SECONDS+20))
+while [[ $(fixture_offer_state "$rollback_order") != EXPIRED ]]; do
+  (( SECONDS < rollback_expiry_deadline )) || {
+    printf '%s\n' 'A API anterior não expirou a oferta persistida após o rollback.' >&2
+    exit 1
+  }
+  sleep 0.5
+done
+rollback_resources=$(dispatch_sql --set "order_id=$rollback_order" --set "courier_id=$rollback_courier" <<'BORA_ROLLBACK_RESOURCES'
+SELECT o.status,c.status,(o.next_attempt_at<=clock_timestamp()+interval '5 seconds')
+FROM orders o JOIN couriers c ON c.id=:'courier_id'::uuid WHERE o.id=:'order_id'::uuid;
+BORA_ROLLBACK_RESOURCES
+)
+test "$rollback_resources" = 'SEARCHING|AVAILABLE|t'
+printf '%s\n' 'Rollback: oferta persistida expirada e reserva liberada pelas duas APIs anteriores.'
+
 grep -Fxq "API1_VERSION=$old_version" "$test_root/state.env"
 grep -Fxq "API2_VERSION=$old_version" "$test_root/state.env"
 grep -Fxq "WEB_VERSION=$old_version" "$test_root/state.env"
@@ -351,5 +591,5 @@ docker logs "$persistent_probe"
   printf '%s\n' 'O probe persistente registrou falhas HTTP ou de conexão.' >&2
   exit 1
 }
-printf 'Integração aprovada: bootstrap, falha de importação, atualização, rollback automático e manual; %s respostas curl HTTP 200, probe Node sem falhas, Caddy e banco preservados, sem reload.\n' \
+printf 'Integração aprovada: bootstrap, falha de importação, atualização, rollback automático e manual; %s respostas curl HTTP 200, probe Node sem falhas, Caddy e banco preservados, gate de criação conferido e prazo preservado no rollback, sem reload.\n' \
   "$(wc -l < "$test_root/http-probe.log")"

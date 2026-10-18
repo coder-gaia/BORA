@@ -10,6 +10,8 @@ export type DemoRole = NonNullable<DemoUserView['role']>;
 export type PositionReceipt = components['schemas']['PositionReceipt'];
 export type CourierWorkView = components['schemas']['CourierWorkView'];
 export type CourierRouteView = components['schemas']['CourierRouteView'];
+export type CourierOfferInbox = components['schemas']['CourierOfferInbox'];
+export type CourierOffer = components['schemas']['CourierOffer'];
 type CourierView = components['schemas']['CourierView'];
 type GeoPoint = components['schemas']['GeoPoint'];
 type AvailabilityRequest = components['schemas']['AvailabilityRequest'];
@@ -26,6 +28,9 @@ type CsrfView = components['schemas']['CsrfView'];
 type DemoLogin = components['schemas']['DemoLogin'];
 type CreateOrderRequest = components['schemas']['CreateOrderRequest'];
 type CancelOrderRequest = components['schemas']['CancelOrderRequest'];
+type ReassignBody = NonNullable<
+  paths['/api/v1/ops/orders/{id}/reassign']['post']['requestBody']
+>['content']['application/json'];
 
 export class ApiError extends Error {
   readonly status: number;
@@ -114,15 +119,34 @@ export const api = {
     } satisfies CancelOrderRequest),
   courierWork: () => request<CourierWorkView>('/api/v1/courier/work'),
   courierRoute: () => request<CourierRouteView>('/api/v1/courier/route'),
+  courierOffer: () => request<CourierOfferInbox>('/api/v1/courier/offer'),
+  acceptOffer: (id: string) => post<void>(`/api/v1/offers/${encodeURIComponent(id)}/accept`),
+  rejectOffer: (id: string) => post<void>(`/api/v1/offers/${encodeURIComponent(id)}/reject`),
+  reassignOrder: (id: string, expectedVersion: number) =>
+    post<void>(`/api/v1/ops/orders/${encodeURIComponent(id)}/reassign`, {
+      expectedVersion,
+    } satisfies ReassignBody),
   availability: (online: boolean, position?: GeoPoint) =>
     post<CourierView>('/api/v1/courier/availability', {
       online,
       position,
     } satisfies AvailabilityRequest),
-  sendPosition: (position: GeoPoint, recordedAt: string) =>
-    post<PositionReceipt>('/api/v1/courier/positions', {
-      positions: [{ recordedAt, position }],
-    } satisfies PositionBatchRequest),
+  async sendPosition(position: GeoPoint) {
+    // A posição manual é coletada agora; o relógio local pode divergir do servidor.
+    const clock = await api.courierOffer();
+    const observedAt = performance.now();
+    const csrf = await getCsrf();
+    const recordedAt = new Date(
+      Date.parse(clock.serverTime) + performance.now() - observedAt,
+    ).toISOString();
+    return request<PositionReceipt>('/api/v1/courier/positions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', [csrf.headerName]: csrf.token },
+      body: JSON.stringify({
+        positions: [{ recordedAt, position }],
+      } satisfies PositionBatchRequest),
+    });
+  },
   pickUpOrder: (id: string, expectedVersion: number) =>
     post<AssignedOrderView>(`/api/v1/orders/${encodeURIComponent(id)}/pickup`, {
       expectedVersion,

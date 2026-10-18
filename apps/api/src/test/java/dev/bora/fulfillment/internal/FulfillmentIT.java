@@ -443,6 +443,53 @@ class FulfillmentIT {
   }
 
   @Test
+  void delayedFutureBatchFromPreviousAssignmentCannotArriveAtTheNextOrder() throws Exception {
+    Browser browser = new Browser();
+    browser.login("COURIER");
+    UUID previous = fixture(browser, OrderStatus.ASSIGNED, false);
+    long oldEpoch =
+        jdbc.sql("SELECT position_epoch FROM couriers WHERE id=:id")
+            .param("id", browser.courierId)
+            .query(Long.class)
+            .single();
+    Instant future = NOW.plusSeconds(4);
+    var delayed =
+        new CourierPositionsPersisted(
+            Map.of(browser.courierId, List.of(new PositionSample(future, PICKUP))),
+            Map.of(browser.courierId, oldEpoch));
+    new TransactionTemplate(manager)
+        .executeWithoutResult(
+            status -> {
+              orders.lockForUpdate(previous);
+              orders.reassign(previous, 0, "epoch-regression");
+            });
+    UUID next = fixture(browser, OrderStatus.SEARCHING, false);
+    new TransactionTemplate(manager)
+        .executeWithoutResult(
+            status -> {
+              orders.lockForUpdate(next);
+              couriers.transition(browser.courierId, new CourierCommand.ReceiveOffer());
+              couriers.transition(browser.courierId, new CourierCommand.AcceptOffer());
+              orders.assign(next, 0, browser.courierId, "epoch-regression");
+            });
+    long currentEpoch =
+        jdbc.sql("SELECT position_epoch FROM couriers WHERE id=:id")
+            .param("id", browser.courierId)
+            .query(Long.class)
+            .single();
+    assertThat(currentEpoch).isEqualTo(oldEpoch + 3);
+    setPosition(browser.courierId, future, PICKUP);
+    events.publishEvent(delayed);
+    assertThat(tracks(next)).isZero();
+    assertThat(orders.find(next).orElseThrow().status()).isEqualTo(OrderStatus.ASSIGNED);
+    events.publishEvent(
+        new CourierPositionsPersisted(
+            delayed.positions(), Map.of(browser.courierId, currentEpoch)));
+    assertThat(tracks(next)).isEqualTo(1);
+    assertThat(orders.find(next).orElseThrow().status()).isEqualTo(OrderStatus.AT_STORE);
+  }
+
+  @Test
   void ignoresDelayedPositionEventsFromAnEarlierAvailabilityEpoch() throws Exception {
     Browser browser = new Browser();
     browser.login("COURIER");

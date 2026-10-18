@@ -154,7 +154,7 @@ export function App() {
           </span>
           <p>
             Comece pela demonstração de pedidos.
-            <span> O mapa ao vivo e o despacho automático chegam nas próximas etapas.</span>
+            <span> Crie uma entrega como loja ou receba ofertas como entregador.</span>
           </p>
         </aside>
       </main>

@@ -13,7 +13,8 @@ trocar de papel, criar pedidos, consultar a linha do tempo e cancelar conforme a
 O [guia de identidade e pedidos](docs/identidade-e-pedidos.md) descreve sessões, privacidade,
 idempotência e o contrato da API.
 Entregadores podem informar disponibilidade e posições em lote; coleta e entrega são
-coordenadas com o estado do pedido. Consulte o
+coordenadas com o estado do pedido. O despacho oferece pedidos por tempo estimado de chegada,
+com prazo para aceitar, recusa e redistribuição pela operação. Consulte o
 [guia de entregadores e posições](docs/entregadores-e-posicoes.md).
 
 ## Executar localmente
@@ -79,6 +80,7 @@ Em um terminal PowerShell, inicie a API:
 .\mvnw.cmd --batch-mode -pl apps/api -am package -DskipTests
 $env:BORA_GRAPH_ROOT = Join-Path (Get-Location) 'apps/api/target/routing-graphs'
 java -jar apps/api/target/bora-api.jar --routing-import
+$env:BORA_DISPATCH_REQUIRE_ACTIVATION = 'false'
 .\mvnw.cmd --batch-mode -pl apps/api spring-boot:run
 ```
 
@@ -88,6 +90,7 @@ Em bash:
 ./mvnw --batch-mode -pl apps/api -am package -DskipTests
 export BORA_GRAPH_ROOT="$(pwd)/apps/api/target/routing-graphs"
 java -jar apps/api/target/bora-api.jar --routing-import
+export BORA_DISPATCH_REQUIRE_ACTIVATION=false
 ./mvnw --batch-mode -pl apps/api spring-boot:run
 ```
 
@@ -104,6 +107,9 @@ A API usa as mesmas credenciais locais padrão. Ajustes no `.env` do Compose pre
 repetidos nas variáveis `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME` e
 `SPRING_DATASOURCE_PASSWORD` do terminal da API. O proxy do Vite usa `http://localhost:8080`;
 para outra porta, defina `API_PROXY_TARGET` no terminal da web.
+
+A liberação explícita do despacho nesses exemplos serve ao desenvolvimento local. Em produção,
+o deploy controla a criação de ofertas por versão; consulte o [guia de publicação](docs/deploy.md).
 
 ## Verificar as alterações
 

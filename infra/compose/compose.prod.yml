@@ -8,7 +8,10 @@ x-logging: &logging
 
 x-api: &api
   restart: unless-stopped
-  environment:
+  environment: &api-environment
+    BORA_DISPATCH_REQUIRE_ACTIVATION: 'true'
+    BORA_DISPATCH_ACTIVATION_FILE: /etc/bora/dispatch-version
+    BORA_DISPATCH_UPSTREAM_MODE_FILE: /etc/bora/upstream-mode
     SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:?Defina POSTGRES_DB.}
     SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:?Defina POSTGRES_USER.}
     SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD.}
@@ -38,6 +41,12 @@ x-api: &api
   mem_limit: 1536m
   volumes:
     - routing-graphs:/var/lib/bora/routing:ro
+    - type: bind
+      source: ${BORA_CONFIG_DIR:?Defina BORA_CONFIG_DIR.}
+      target: /etc/bora
+      read_only: true
+      bind:
+        create_host_path: false
   read_only: true
   tmpfs:
     - /tmp:size=128m,mode=1777
@@ -112,10 +121,16 @@ services:
   api1:
     <<: *api
     image: ${API_IMAGE:?Defina API_IMAGE.}:${API1_VERSION:?Defina API1_VERSION.}
+    environment:
+      <<: *api-environment
+      BORA_RELEASE_VERSION: ${API1_VERSION:?Defina API1_VERSION.}
 
   api2:
     <<: *api
     image: ${API_IMAGE:?Defina API_IMAGE.}:${API2_VERSION:?Defina API2_VERSION.}
+    environment:
+      <<: *api-environment
+      BORA_RELEASE_VERSION: ${API2_VERSION:?Defina API2_VERSION.}
 
   web-assets:
     image: ${WEB_IMAGE:?Defina WEB_IMAGE.}:${WEB_VERSION:?Defina WEB_VERSION.}

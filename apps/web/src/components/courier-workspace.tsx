@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { CourierOffer } from '@/components/courier-offer';
 import { api, type CourierWorkView, type DemoUserView, type PositionReceipt } from '@/lib/api';
 
 const courierStatuses: Record<string, string> = {
@@ -39,7 +40,8 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
   const [inputLatitude, setLatitude] = useState<string | null>(null);
   const [inputLongitude, setLongitude] = useState<string | null>(null);
   const [confirmationCode, setConfirmationCode] = useState('');
-  const [receipt, setReceipt] = useState<PositionReceipt | null>(null);
+  const [receipt, setReceipt] = useState<(PositionReceipt & { observedAt: number }) | null>(null);
+  const [receiptClock, setReceiptClock] = useState(0);
   const [notice, setNotice] = useState('');
   const work = useQuery({
     queryKey: ['courier-work', user.id],
@@ -61,7 +63,10 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
   });
 
   async function refresh() {
-    await queryClient.invalidateQueries({ queryKey: ['courier-work'] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['courier-work'] }),
+      queryClient.invalidateQueries({ queryKey: ['courier-offer'] }),
+    ]);
     const current = queryClient.getQueryData<CourierWorkView>(['courier-work', user.id]);
     if (current?.order) {
       await queryClient.invalidateQueries({ queryKey: ['courier-route'] });
@@ -85,11 +90,9 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
 
   const availability = useMutation({
     mutationFn: (online: boolean) => api.availability(online, online ? position() : undefined),
-    onSuccess(value) {
+    onSuccess() {
       setReceipt(null);
-      setNotice(
-        value.status === 'OFFLINE' ? 'Você ficou offline.' : 'Você está disponível para entregas.',
-      );
+      setNotice('');
       void refresh();
     },
     onError() {
@@ -97,13 +100,13 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
     },
   });
   const movement = useMutation({
-    mutationFn: () => api.sendPosition(position(), new Date().toISOString()),
+    mutationFn: () => api.sendPosition(position()),
     onMutate() {
       setReceipt(null);
       setNotice('');
     },
     onSuccess(value) {
-      setReceipt(value);
+      setReceipt({ ...value, observedAt: performance.now() });
       setNotice('');
       void refresh();
     },
@@ -135,8 +138,12 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
     receipt?.latestRecordedAt &&
     courier?.locationUpdatedAt &&
     Date.parse(courier.locationUpdatedAt) >= Date.parse(receipt.latestRecordedAt);
-  const confirmationDelayed =
-    receipt && work.dataUpdatedAt > Date.parse(receipt.flushDeadline) + 5_000;
+  useEffect(() => {
+    if (!receipt || receipt.accepted === 0 || persisted) return;
+    const timer = window.setInterval(() => setReceiptClock(performance.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [receipt, persisted]);
+  const confirmationDelayed = receipt && receiptClock - receipt.observedAt > 6_000;
 
   function submitPosition(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -255,10 +262,11 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
           </>
         )}
       </section>
-      {courier && !order && (
-        <p className="demo-empty">
-          Nenhuma entrega em andamento. As ofertas automáticas chegam na próxima etapa.
-        </p>
+      {courier && (
+        <CourierOffer userId={user.id} status={courier.status} busy={busy} onChanged={refresh} />
+      )}
+      {courier?.status === 'OFFLINE' && !order && (
+        <p className="demo-empty">Fique online para receber ofertas de entrega.</p>
       )}
       {order && (
         <section className="order-detail" aria-labelledby="courier-order-title">
