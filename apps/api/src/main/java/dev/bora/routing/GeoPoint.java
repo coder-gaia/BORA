@@ -1,5 +1,8 @@
 package dev.bora.routing;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
+@Schema(requiredProperties = {"latitude", "longitude"})
 public record GeoPoint(double latitude, double longitude) {
   public GeoPoint {
     if (!Double.isFinite(latitude)

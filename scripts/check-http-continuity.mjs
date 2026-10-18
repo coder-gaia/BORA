@@ -11,6 +11,7 @@ Opções:
   --duration  Duração em segundos. Padrão: 60.
   --interval  Intervalo mínimo entre inícios de requisição, em ms. Padrão: 50.
   --timeout   Prazo de cada requisição completa, em ms. Padrão: 2000.
+  --demo-session  Confere também a mesma sessão autenticada durante toda a medição.
   --help      Mostra esta ajuda.
 
 Cada rota tem seu próprio loop, com no máximo uma requisição em andamento.
@@ -30,6 +31,7 @@ function readOptions() {
         duration: { type: 'string', default: '60' },
         interval: { type: 'string', default: '50' },
         timeout: { type: 'string', default: '2000' },
+        'demo-session': { type: 'boolean', default: false },
         help: { type: 'boolean', default: false },
       },
       allowPositionals: false,
@@ -84,7 +86,59 @@ function readOptions() {
     }
   }
 
-  return { url: url.origin, durationSeconds, intervalMs, timeoutMs };
+  return {
+    url: url.origin,
+    durationSeconds,
+    intervalMs,
+    timeoutMs,
+    demoSession: values['demo-session'],
+  };
+}
+
+async function openDemoSession(options, signal) {
+  const cookies = new Map();
+  async function call(path, init = {}) {
+    const response = await fetch(new URL(path, options.url), {
+      ...init,
+      redirect: 'manual',
+      signal: AbortSignal.any([signal, AbortSignal.timeout(options.timeoutMs)]),
+      headers: {
+        Accept: 'application/json',
+        Cookie: [...cookies.values()].join('; '),
+        ...init.headers,
+      },
+    });
+    for (const cookie of response.headers.getSetCookie()) {
+      const pair = cookie.split(';', 1)[0];
+      cookies.set(pair.slice(0, pair.indexOf('=')), pair);
+    }
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(`A preparação da sessão retornou HTTP ${response.status}.`);
+    }
+    return response.json();
+  }
+  const csrf = await call('/api/v1/auth/csrf');
+  if (typeof csrf.token !== 'string' || typeof csrf.headerName !== 'string') {
+    throw new Error('O endpoint de proteção da sessão retornou dados inválidos.');
+  }
+  const session = await call('/api/v1/auth/demo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', [csrf.headerName]: csrf.token },
+    body: JSON.stringify({ role: 'STORE' }),
+  });
+  if (session.authenticated !== true || typeof session.user?.id !== 'string') {
+    throw new Error('A entrada de demonstração não autenticou a sessão.');
+  }
+  const confirmed = await call('/api/v1/auth/me');
+  if (confirmed.authenticated !== true || confirmed.user?.id !== session.user.id) {
+    throw new Error('A sessão não foi compartilhada após a entrada.');
+  }
+  return {
+    cookie: [...cookies.values()].join('; '),
+    userId: session.user.id,
+    role: session.user.role,
+  };
 }
 
 function round(value) {
@@ -105,7 +159,7 @@ function summarize(samples) {
   };
 }
 
-async function request(url, path, timeoutMs, signal) {
+async function request(url, path, timeoutMs, signal, session) {
   const startedAt = performance.now();
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const requestSignal = AbortSignal.any([signal, timeoutSignal]);
@@ -116,7 +170,10 @@ async function request(url, path, timeoutMs, signal) {
       signal: requestSignal,
       redirect: 'manual',
       cache: 'no-store',
-      headers: { Accept: path === '/' ? 'text/html' : 'application/json' },
+      headers: {
+        Accept: path === '/' ? 'text/html' : 'application/json',
+        ...(session && path === '/api/v1/auth/me' ? { Cookie: session.cookie } : {}),
+      },
     });
 
     if (response.status !== 200) {
@@ -135,7 +192,15 @@ async function request(url, path, timeoutMs, signal) {
         failure = { reason: 'invalid_json' };
       }
 
-      if (!failure && payload?.status !== 'UP') {
+      if (
+        !failure &&
+        path === '/api/v1/auth/me' &&
+        (payload?.authenticated !== true ||
+          payload.user?.id !== session.userId ||
+          payload.user?.role !== session.role)
+      ) {
+        failure = { reason: 'session_changed' };
+      } else if (!failure && path !== '/api/v1/auth/me' && payload?.status !== 'UP') {
         failure = { reason: 'not_ready' };
       }
     }
@@ -163,7 +228,7 @@ async function measureEndpoint(path, options, deadline, signal) {
 
   while (!signal.aborted && performance.now() < deadline) {
     const startedAt = performance.now();
-    const sample = await request(options.url, path, options.timeoutMs, signal);
+    const sample = await request(options.url, path, options.timeoutMs, signal, options.session);
     samples.push(sample);
 
     if (sample.failure && failureExamples.length < 5) {
@@ -210,6 +275,16 @@ async function main() {
   const controller = new AbortController();
   const interrupt = () => controller.abort();
   process.once('SIGINT', interrupt);
+  if (options.demoSession) {
+    try {
+      options.session = await openDemoSession(options, controller.signal);
+    } catch (error) {
+      process.removeListener('SIGINT', interrupt);
+      console.error(error.message);
+      process.exitCode = 1;
+      return;
+    }
+  }
   const startedAt = new Date().toISOString();
   const startedAtMs = performance.now();
   const deadline = startedAtMs + options.durationSeconds * 1_000;
@@ -217,8 +292,8 @@ async function main() {
 
   try {
     results = await Promise.all(
-      ['/', '/actuator/health/readiness'].map((path) =>
-        measureEndpoint(path, options, deadline, controller.signal),
+      ['/', '/actuator/health/readiness', ...(options.demoSession ? ['/api/v1/auth/me'] : [])].map(
+        (path) => measureEndpoint(path, options, deadline, controller.signal),
       ),
     );
   } finally {
@@ -235,6 +310,7 @@ async function main() {
     intervalMs: options.intervalMs,
     timeoutMs: options.timeoutMs,
     interrupted: controller.signal.aborted,
+    sessionChecked: options.demoSession,
     totals,
     endpoints: results.map(({ path, samples, failureExamples }) => ({
       path,

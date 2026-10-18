@@ -8,8 +8,10 @@ composição Docker. As funcionalidades de entrega estão em desenvolvimento.
 
 A [demonstração pública](https://bora.alexandregaia.me/) apresenta a saúde dos serviços.
 O domínio já contém as máquinas de estado, o esquema espacial e 40 lojas fictícias;
-o roteamento usa um recorte real das vias de São Paulo. Os fluxos de entrega ainda
-serão disponibilizados na interface.
+o roteamento usa um recorte real das vias de São Paulo. A entrada de demonstração permite
+trocar de papel, criar pedidos, consultar a linha do tempo e cancelar conforme a etapa.
+O [guia de identidade e pedidos](docs/identidade-e-pedidos.md) descreve sessões, privacidade,
+idempotência e o contrato da API.
 
 ## Executar localmente
 
@@ -107,8 +109,11 @@ Com Docker ativo, construa primeiro a imagem PostGIS usada pelo Testcontainers:
 ```sh
 docker build --tag bora-postgis:18.6-3.6.4 infra/postgres
 node --test scripts/check-rules.test.mjs
+node --test scripts/check-http-continuity.test.mjs
 node scripts/check-rules.mjs
 npm ci --prefix apps/web
+npm ci --prefix apps/web/tools/api-contract
+node scripts/generate-api-types.mjs --check
 node scripts/format.mjs
 npm run lint --prefix apps/web
 npm run typecheck --prefix apps/web
@@ -193,3 +198,5 @@ node scripts/check-http-continuity.mjs --url http://localhost:18080 --duration 6
 
 O relatório informa sucessos, falhas e latência p95. A verificação exige HTTP 200 na página
 e readiness com estado `UP`; qualquer falha resulta em código de saída diferente de zero.
+Acrescente `--demo-session` para criar uma sessão de demonstração e exigir a mesma identidade
+durante toda a medição.

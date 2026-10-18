@@ -22,10 +22,26 @@ spring:
   threads:
     virtual:
       enabled: true
+  session:
+    timeout: 2h
+    jdbc:
+      initialize-schema: never
 
 server:
   port: 8080
   shutdown: graceful
+  servlet:
+    session:
+      cookie:
+        name: BORA_SESSION
+        http-only: true
+        same-site: lax
+        secure: ${BORA_SESSION_SECURE:false}
+
+springdoc:
+  api-docs:
+    path: /api/openapi
+  paths-to-match: /api/v1/**
 
 management:
   endpoints:
@@ -45,6 +61,8 @@ management:
           include: livenessState
 
 bora:
+  orders:
+    confirmation-secret: ${BORA_CONFIRMATION_SECRET:bora-local-development-only-confirmation-key}
   routing:
     graph-root: ${BORA_GRAPH_ROOT:target/routing-graphs}
     manifest: routing/data/manifest.json

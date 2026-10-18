@@ -20,6 +20,18 @@ separadamente em amd64 e arm64 no CI; veja [infra/postgres](../infra/postgres/RE
 - `node scripts/check-rules.mjs`: conteúdo dos textos versionados, nomes e histórico de commits.
 - `node --test scripts/check-rules.test.mjs`: cenários reais de Git para as regras de autoria,
   mensagens e conteúdo preparado para commit.
+- `node --test scripts/check-http-continuity.test.mjs`: continuidade HTTP e detecção de perda
+  de sessão durante a atualização.
+- `node scripts/generate-api-types.mjs --check`: contrato OpenAPI e tipos gerados sincronizados.
+- `npm run test:e2e --prefix apps/web`: fluxos reais de identidade e pedidos no Chromium,
+  com o ambiente local em execução e o navegador do Playwright instalado.
+
+O gerador de tipos possui ferramentas isoladas em `apps/web/tools/api-contract`; instalar com
+`npm ci --prefix apps/web/tools/api-contract`. Isso mantém o TypeScript da aplicação independente
+da versão exigida pelo gerador. O teste Java exporta o contrato real para
+`apps/api/target/openapi.json`; o CI o compara com o snapshot versionado e com os tipos.
+Para atualizar o contrato e preparar o navegador, consulte o
+[guia de identidade e pedidos](identidade-e-pedidos.md).
 
 No PowerShell, substitua `./mvnw` por `.\mvnw.cmd`. O hook local é instalado com
 `node scripts/install-hooks.mjs`. Ele verifica o conteúdo do índice, a identidade efetiva de

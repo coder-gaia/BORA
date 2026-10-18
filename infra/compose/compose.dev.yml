@@ -64,6 +64,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-bora}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-bora}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-bora_dev}
+      BORA_SESSION_SECURE: ${BORA_SESSION_SECURE:-false}
+      BORA_CONFIRMATION_SECRET: ${BORA_CONFIRMATION_SECRET:-bora-local-development-only-confirmation-key}
       BORA_GRAPH_ROOT: /var/lib/bora/routing
       SIM_SPEED: ${SIM_SPEED:-3}
     volumes:

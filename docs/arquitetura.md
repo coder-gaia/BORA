@@ -2,13 +2,14 @@
 
 Bora mantém API, simulador e interface em um monorepo. O backend evolui como monolito modular,
 com transações locais e fronteiras verificáveis. A base atual contém saúde operacional,
-máquinas de estado, esquema PostGIS, histórico transacional e roteamento embutido. O simulador ainda
+máquinas de estado, esquema PostGIS, sessões compartilhadas, pedidos autenticados, histórico
+transacional e roteamento embutido. O simulador ainda
 não executa cenários.
 
 ```mermaid
 flowchart LR
   Browser[Navegador] --> Web[Vite e React]
-  Web -->|proxy de saúde| API[Spring Boot]
+  Web -->|mesma origem e sessão| API[Spring Boot]
   API --> DB[(PostgreSQL e PostGIS)]
   API -->|somente leitura| Graph[(Grafo GraphHopper)]
 ```
@@ -65,3 +66,24 @@ O importador prepara e aquece o grafo antes de mudar o tráfego. Publica um dire
 mantendo versões anteriores para rollback. As APIs usam GraphHopper embutido e compartilham
 esse volume somente para leitura; o cálculo não chama um serviço externo.
 O [guia de roteamento](roteamento.md) descreve perfil, dados, ETA e medições.
+
+## Identidade e pedidos
+
+As duas APIs compartilham sessões Spring Session JDBC. O navegador recebe um cookie HttpOnly;
+ações exigem o token CSRF obtido da mesma sessão. Trocar de papel preserva o contexto privado
+do visitante, com rotação do identificador da sessão e do token. Sair revoga o contexto.
+
+`identity` cuida da identidade; `demo`, dos limites compartilhados com Bucket4j e PostgreSQL;
+`stores`, das consultas de loja; `orders`, da criação e do ciclo do pedido. `shared` contém
+erros HTTP comuns, sem depender dos módulos do domínio. Os controladores validam o papel e os
+serviços voltam a conferir propriedade e contexto. A operação de visitante não recebe pedidos
+particulares de outros contextos.
+
+Criar um pedido adquire um lock no contexto antes de conferir o limite de cinco pedidos ativos.
+Pedido, evento e registro de idempotência são persistidos na mesma transação. A chave é
+compartilhada pelas APIs e uma repetição válida preserva a resposta original. O limitador usa
+uma conexão própria, antes de abrir essa transação, para evitar espera circular no pool.
+
+O contrato OpenAPI vem dos controladores reais. Um teste exporta e compara o documento com
+o snapshot versionado; o CI também confere os tipos TypeScript derivados desse documento.
+Consulte [identidade e pedidos](identidade-e-pedidos.md).

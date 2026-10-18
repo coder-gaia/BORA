@@ -75,6 +75,8 @@ ACME_EMAIL=tests@example.test
 POSTGRES_DB=bora
 POSTGRES_USER=bora
 POSTGRES_PASSWORD=isolated_test_only
+BORA_SESSION_SECURE=false
+BORA_CONFIRMATION_SECRET=bora-isolated-deployment-test-confirmation-key
 API_IMAGE=$API_IMAGE
 WEB_IMAGE=$WEB_IMAGE
 DB_IMAGE=$DB_IMAGE
@@ -236,7 +238,7 @@ docker create --name "$persistent_probe" --network "${project}_edge" \
   --cap-drop ALL --security-opt no-new-privileges:true \
   --memory 256m --entrypoint node "$node_image" \
   /tmp/check-http-continuity.mjs --url "$BORA_PUBLIC_URL" \
-  --duration 180 --interval 50 --timeout 5000 >/dev/null
+  --duration 300 --interval 50 --timeout 5000 --demo-session >/dev/null
 docker cp "$source_root/scripts/check-http-continuity.mjs" \
   "$persistent_probe:/tmp/check-http-continuity.mjs"
 caddy_config_before=$(docker exec "$caddy_before" wget --quiet --output-document=- \

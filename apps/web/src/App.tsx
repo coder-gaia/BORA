@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useServiceHealth } from '@/hooks/use-service-health';
 import { cn } from '@/lib/utils';
+import { DemoPanel } from '@/components/demo-panel';
 
 const healthMessages = {
   loading: {
@@ -145,13 +146,15 @@ export function App() {
           </section>
         </div>
 
+        <DemoPanel />
+
         <aside className="project-note" aria-label="Sobre a demonstração">
           <span className="note-number" aria-hidden="true">
-            Próxima parada
+            Em desenvolvimento
           </span>
           <p>
-            Uma cidade viva, com entregas que acontecem sozinhas.
-            <span> A demonstração está a caminho.</span>
+            Comece pela demonstração de pedidos.
+            <span> O mapa ao vivo e o despacho automático chegam nas próximas etapas.</span>
           </p>
         </aside>
       </main>

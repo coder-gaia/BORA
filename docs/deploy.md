@@ -85,9 +85,17 @@ O firewall é ajustado por uma unidade idempotente que adiciona somente uma perm
 80/443. As regras, políticas e portas SSH existentes são preservadas. O NSG do Azure e o
 firewall da VM precisam permitir o tráfego; configurar um deles não substitui o outro.
 
-O provisionamento gera uma senha aleatória para o banco em `/opt/bora/env.production`, com
-permissão `0600`, e não imprime esse valor. A execução seguinte preserva o arquivo. Conferir
-o domínio e o e-mail de ACME no próprio arquivo, usando um editor na VM.
+O provisionamento gera uma senha aleatória para o banco e uma chave independente
+`BORA_CONFIRMATION_SECRET` em `/opt/bora/env.production`, com permissão `0600`, sem imprimir
+esses valores. A execução seguinte preserva o arquivo. Conferir o domínio e o e-mail de
+ACME no próprio arquivo, usando um editor na VM. Em instalações anteriores ao M04, adicionar
+uma chave aleatória persistente de pelo menos 32 caracteres antes da atualização. Preservar
+essa chave nos próximos deploys e no rollback: ela deriva os códigos dos pedidos existentes.
+
+Em produção, `BORA_SESSION_SECURE=true` restringe o cookie de sessão ao HTTPS. As duas APIs
+compartilham sessões no PostgreSQL. O Tomcat interpreta os cabeçalhos encaminhados pelo
+Caddy usando `SERVER_FORWARD_HEADERS_STRATEGY=native`; o proxy substitui os cabeçalhos de
+origem enviados pelo cliente antes de encaminhá-los.
 
 O diretório `/opt/bora/config` usa `0755` e contém somente a configuração pública do Caddy,
 em arquivo `0644`. Isso permite que o container sem capabilities leia o bind mount, mesmo
@@ -206,11 +214,18 @@ projeto de teste. Nenhum recurso do ambiente de desenvolvimento é usado como de
 
 O resultado informa quantas requisições receberam HTTP 200 durante a atualização e a falha
 simulada. O teste usa também um cliente Node com conexões persistentes e verifica que o
-servidor HTTP não foi recarregado durante as trocas normais. Esse resultado descreve as
+servidor HTTP não foi recarregado durante as trocas normais. O cliente também entra na
+demonstração e exige que a mesma identidade continue autenticada entre as duas APIs e após
+os rollbacks. Esse resultado descreve as
 condições exercitadas no teste, sem garantir disponibilidade absoluta da VM ou do provedor.
+As tags válidas do cenário usam a mesma imagem de origem; a prova de sessão cobre a troca
+de processos. A compatibilidade entre versões diferentes também depende das migrações
+aditivas e da validação da atualização real.
 
-Na validação local de 18/10/2026 em amd64, 1.376 requisições receberam HTTP 200 durante a
-atualização, a falha simulada e os rollbacks automático e manual. O teste também confirmou o
+Na validação local de 18/10/2026 em amd64, o cliente Node completou 17.604 requisições em
+300 segundos, sem falhas de HTTP, conexão ou identidade. Outras 2.668 consultas curl receberam
+HTTP 200 durante a atualização, a falha simulada e os rollbacks automático e manual.
+O teste também confirmou o
 lock de concorrência, a repetição idempotente de uma release, a falha de download sem perder
 o rollback anterior e a preservação dos containers do Caddy e do banco.
 

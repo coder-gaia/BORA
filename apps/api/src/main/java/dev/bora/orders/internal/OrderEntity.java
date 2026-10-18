@@ -74,7 +74,37 @@ class OrderEntity {
   @Column(nullable = false)
   private long version;
 
+  @Column(name = "visitor_context_id")
+  private UUID visitorContextId;
+
+  @Column(name = "owner_user_id")
+  private UUID ownerUserId;
+
   protected OrderEntity() {}
+
+  OrderEntity(
+      UUID id,
+      String publicCode,
+      UUID storeId,
+      Point dropoff,
+      String confirmationCodeHash,
+      Instant now,
+      Instant slaDeadline,
+      UUID visitorContextId,
+      UUID ownerUserId) {
+    this.id = id;
+    this.publicCode = publicCode;
+    this.storeId = storeId;
+    this.dropoff = (Point) dropoff.copy();
+    this.confirmationCodeHash = confirmationCodeHash;
+    this.createdAt = now;
+    this.slaDeadline = slaDeadline;
+    this.status = OrderStatus.SEARCHING;
+    this.nextAttemptAt = now;
+    this.searchRadiusM = 2_000;
+    this.visitorContextId = visitorContextId;
+    this.ownerUserId = ownerUserId;
+  }
 
   UUID id() {
     return id;
