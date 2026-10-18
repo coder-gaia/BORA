@@ -87,3 +87,21 @@ uma conexão própria, antes de abrir essa transação, para evitar espera circu
 O contrato OpenAPI vem dos controladores reais. Um teste exporta e compara o documento com
 o snapshot versionado; o CI também confere os tipos TypeScript derivados desse documento.
 Consulte [identidade e pedidos](identidade-e-pedidos.md).
+
+## Entregadores e execução da entrega
+
+`couriers` controla disponibilidade e recebe posições em um buffer limitado. A gravação em
+lote no PostgreSQL só substitui uma posição por outra coletada depois dela. O banco é a fonte
+compartilhada entre as APIs; uma resposta de recebimento ainda precisa ser confirmada pela
+consulta da posição persistida.
+
+`fulfillment` depende das interfaces públicas de `orders` e `couriers`. Coordena chegada por
+proximidade, trilha, coleta, código de confirmação e liberação do entregador. Um evento síncrono
+de término mantém pedido, evento e liberação na mesma transação. A notificação de posições
+acontece depois da gravação do lote; uma reconciliação periódica recupera progresso pelo banco
+se essa notificação for perdida. Consulte [entregadores e posições](entregadores-e-posicoes.md).
+
+O módulo também chama a limpeza de reservas de `dispatch` antes de liberar o entregador
+atribuído. Cancelamento e expiração de ofertas pendentes já funcionam nesta etapa, preparando
+a convivência com a versão seguinte durante publicações. O despacho automático usa essa base
+no M06; a limpeza continua funcionando após um rollback.

@@ -571,6 +571,32 @@ h2 {
   margin-top: 4px;
 }
 
+.courier-status,
+.position-receipt {
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.courier-status {
+  font-weight: 600;
+}
+
+.delivery-code-label {
+  display: grid;
+  max-width: 280px;
+  gap: 8px;
+  margin-block: 20px;
+  font-size: 14px;
+}
+
+.delivery-code-label input {
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font: inherit;
+}
+
 @media (width <= 480px) {
   .demo-panel {
     margin-top: 40px;

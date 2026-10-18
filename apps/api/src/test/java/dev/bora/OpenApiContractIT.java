@@ -77,11 +77,20 @@ class OpenApiContractIT {
               "/api/v1/stores/me",
               "/api/v1/orders",
               "/api/v1/orders/{id}",
-              "/api/v1/orders/{id}/cancel")) {
+              "/api/v1/orders/{id}/cancel",
+              "/api/v1/courier/me",
+              "/api/v1/courier/availability",
+              "/api/v1/courier/positions",
+              "/api/v1/courier/work",
+              "/api/v1/courier/route",
+              "/api/v1/orders/{id}/pickup",
+              "/api/v1/orders/{id}/deliver")) {
         assertThat(contract.path("paths").has(endpoint)).as(endpoint).isTrue();
       }
       JsonNode paths = contract.path("paths");
       assertThat(paths.path("/api/v1/orders").path("post").path("responses").has("201")).isTrue();
+      assertThat(paths.path("/api/v1/courier/positions").path("post").path("responses").has("202"))
+          .isTrue();
       assertThat(paths.path("/api/v1/auth/csrf").path("get").path("parameters").isEmpty()).isTrue();
       assertThat(paths.path("/api/v1/auth/me").path("get").path("security").isEmpty()).isTrue();
       JsonNode security = paths.path("/api/v1/orders").path("post").path("security");
@@ -142,7 +151,8 @@ class OpenApiContractIT {
       Map<String, Object> sorted = new TreeMap<>();
       map.forEach(
           (key, child) -> {
-            if (("required".equals(key) || "enum".equals(key)) && child instanceof List<?> items) {
+            if (("required".equals(key) || "enum".equals(key) || "type".equals(key))
+                && child instanceof List<?> items) {
               sorted.put(
                   key.toString(),
                   items.stream().sorted(Comparator.comparing(String::valueOf)).toList());

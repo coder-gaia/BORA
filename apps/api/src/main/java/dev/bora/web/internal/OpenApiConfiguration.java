@@ -66,6 +66,9 @@ class OpenApiConfiguration {
       nullable(components, "OrderSummary", "courierId");
       nullable(components, "OrderView", "courierId", "confirmationCode");
       nullable(components, "OrderEventView", "fromStatus");
+      nullable(components, "CourierView", "location", "locationUpdatedAt");
+      nullable(components, "CourierWorkView", "order");
+      nullable(components, "AssignedOrderView", "atStoreAt", "pickedUpAt");
 
       api.getPaths()
           .forEach(
@@ -153,6 +156,80 @@ class OpenApiConfiguration {
                                     operation.getResponses(),
                                     "409",
                                     "A versão ou a etapa do pedido mudou. Consulte o pedido novamente.");
+                              }
+                              case "setCourierAvailability" -> {
+                                error(
+                                    operation.getResponses(),
+                                    "400",
+                                    "Confira a disponibilidade e a posição informadas.");
+                                error(
+                                    operation.getResponses(),
+                                    "409",
+                                    "Uma oferta ou entrega impede esta mudança de disponibilidade.");
+                                error(
+                                    operation.getResponses(),
+                                    "422",
+                                    "A posição deve ficar dentro da área atendida e próxima a uma via acessível.");
+                                error(
+                                    operation.getResponses(),
+                                    "503",
+                                    "O grafo de roteamento ainda não está disponível.");
+                              }
+                              case "submitCourierPositions" -> {
+                                error(
+                                    operation.getResponses(),
+                                    "400",
+                                    "Confira as posições e os horários do lote.");
+                                error(
+                                    operation.getResponses(),
+                                    "409",
+                                    "Fique online antes de enviar posições.");
+                                error(
+                                    operation.getResponses(),
+                                    "422",
+                                    "As posições devem ficar dentro da área atendida e próximas a vias acessíveis.");
+                                error(
+                                    operation.getResponses(),
+                                    "429",
+                                    "Limite de envio de posições atingido.");
+                                error(
+                                    operation.getResponses(),
+                                    "503",
+                                    "O roteamento ou a gravação de posições está temporariamente indisponível.");
+                              }
+                              case "getCourierRoute" -> {
+                                error(
+                                    operation.getResponses(),
+                                    "409",
+                                    "Não há entrega ativa com posição recente para calcular a rota.");
+                                error(
+                                    operation.getResponses(),
+                                    "422",
+                                    "Não há rota de moto disponível entre os pontos.");
+                                error(
+                                    operation.getResponses(),
+                                    "503",
+                                    "O grafo de roteamento ainda não está disponível.");
+                              }
+                              case "pickUpOrder", "deliverOrder" -> {
+                                error(
+                                    operation.getResponses(),
+                                    "400",
+                                    "Confira o pedido, a versão e o código informado.");
+                                error(
+                                    operation.getResponses(),
+                                    "404",
+                                    "A entrega não pertence ao entregador autenticado.");
+                                error(
+                                    operation.getResponses(),
+                                    "409",
+                                    "Confira a etapa, a versão, a posição e o código da entrega.");
+                                if ("deliverOrder".equals(operation.getOperationId())) {
+                                  error(
+                                      operation.getResponses(),
+                                      "429",
+                                      "Limite de tentativas do código de confirmação atingido.");
+                                }
                               }
                               default -> {}
                             }

@@ -361,7 +361,7 @@ class OrdersService {
     var locked =
         jdbc.sql(
                 """
-            SELECT id FROM demo_contexts WHERE id=:id AND expires_at>CURRENT_TIMESTAMP FOR UPDATE
+            SELECT id FROM demo_contexts WHERE id=:id AND expires_at>created_at AND expires_at>CURRENT_TIMESTAMP FOR UPDATE
             """)
             .param("id", context)
             .query(UUID.class)

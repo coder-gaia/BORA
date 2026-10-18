@@ -2,6 +2,7 @@ package dev.bora.orders.internal;
 
 import dev.bora.orders.OrderChange;
 import dev.bora.orders.OrderCommand;
+import dev.bora.orders.OrderResourcesReleased;
 import dev.bora.orders.OrderTransition;
 import dev.bora.orders.OrderVersionConflict;
 import jakarta.persistence.EntityManager;
@@ -11,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,10 +22,13 @@ public class OrderLifecycleService {
 
   private final EntityManager entityManager;
   private final Clock clock;
+  private final ApplicationEventPublisher events;
 
-  OrderLifecycleService(EntityManager entityManager, Clock clock) {
+  OrderLifecycleService(
+      EntityManager entityManager, Clock clock, ApplicationEventPublisher events) {
     this.entityManager = entityManager;
     this.clock = clock;
+    this.events = events;
   }
 
   public OrderChange assign(UUID id, long expectedVersion, UUID courierId, String actor) {
@@ -96,6 +101,24 @@ public class OrderLifecycleService {
         new OrderEventEntity(
             id, eventType, payload, actor.strip(), transition.occurredAt(), order.version()));
     entityManager.flush();
+    OrderResourcesReleased.Reason release =
+        switch (command) {
+          case OrderCommand.CancelByStore ignored -> OrderResourcesReleased.Reason.CANCELED;
+          case OrderCommand.CancelByOperations ignored -> OrderResourcesReleased.Reason.CANCELED;
+          case OrderCommand.Reassign ignored -> OrderResourcesReleased.Reason.REASSIGNED;
+          case OrderCommand.Deliver ignored -> OrderResourcesReleased.Reason.DELIVERED;
+          default -> null;
+        };
+    if (release != null) {
+      events.publishEvent(
+          new OrderResourcesReleased(
+              id,
+              transition.previous().status(),
+              transition.previous().courierId(),
+              release,
+              transition.occurredAt(),
+              order.version()));
+    }
     return new OrderChange(
         id,
         transition.next().status(),

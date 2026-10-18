@@ -1,0 +1,11 @@
+FROM eclipse-temurin:25.0.4.1_1-jdk-noble@sha256:ba0f0e1a33864105e1d454e88105c617ab40f71062db1f306bf58be32a3f8e5e
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV MAVEN_USER_HOME=/m2
+WORKDIR /workspace
+COPY positions.runner.sh /usr/local/bin/positions-runner
+RUN chmod +x /usr/local/bin/positions-runner
+ENTRYPOINT ["/usr/local/bin/positions-runner"]

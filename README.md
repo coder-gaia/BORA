@@ -12,6 +12,9 @@ o roteamento usa um recorte real das vias de São Paulo. A entrada de demonstra�
 trocar de papel, criar pedidos, consultar a linha do tempo e cancelar conforme a etapa.
 O [guia de identidade e pedidos](docs/identidade-e-pedidos.md) descreve sessões, privacidade,
 idempotência e o contrato da API.
+Entregadores podem informar disponibilidade e posições em lote; coleta e entrega são
+coordenadas com o estado do pedido. Consulte o
+[guia de entregadores e posições](docs/entregadores-e-posicoes.md).
 
 ## Executar localmente
 

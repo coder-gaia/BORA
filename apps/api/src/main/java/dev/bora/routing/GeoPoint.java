@@ -1,9 +1,12 @@
 package dev.bora.routing;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 @Schema(requiredProperties = {"latitude", "longitude"})
-public record GeoPoint(double latitude, double longitude) {
+public record GeoPoint(
+    @JsonProperty(required = true) double latitude,
+    @JsonProperty(required = true) double longitude) {
   public GeoPoint {
     if (!Double.isFinite(latitude)
         || !Double.isFinite(longitude)

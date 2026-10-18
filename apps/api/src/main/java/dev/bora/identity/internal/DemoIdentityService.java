@@ -57,39 +57,51 @@ class DemoIdentityService {
 
   Optional<DemoUserView> touch(DemoPrincipal principal) {
     Instant now = clock.instant();
-    if (!lockActiveContext(principal.contextId(), now)) {
-      return Optional.empty();
-    }
     Optional<User> result =
         jdbc.sql(
-                "SELECT * FROM users WHERE id = :id AND context_id = :context AND expires_at > :now")
+                """
+                WITH locked_context AS MATERIALIZED (
+                  SELECT id,expires_at FROM demo_contexts
+                  WHERE id=:context AND expires_at>created_at AND expires_at>:now FOR UPDATE
+                ), valid_user AS MATERIALIZED (
+                  SELECT u.* FROM locked_context c JOIN users u ON u.context_id=c.id
+                  WHERE c.expires_at>clock_timestamp()
+                    AND u.id=:id AND u.expires_at>:now AND u.expires_at>clock_timestamp()
+                    AND u.role=:role
+                    AND u.store_id IS NOT DISTINCT FROM CAST(:store AS uuid)
+                    AND u.courier_id IS NOT DISTINCT FROM CAST(:courier AS uuid)
+                    AND u.visitor=:visitor
+                ), renewed_context AS (
+                  UPDATE demo_contexts c SET expires_at=GREATEST(c.expires_at,:expires)
+                  FROM valid_user u WHERE c.id=u.context_id RETURNING c.id
+                ), renewed_users AS (
+                  UPDATE users u SET expires_at=GREATEST(u.expires_at,:expires)
+                  FROM renewed_context c WHERE u.context_id=c.id RETURNING u.*
+                )
+                SELECT * FROM renewed_users WHERE id=:id
+                """)
             .param("id", principal.userId())
             .param("context", principal.contextId())
             .param("now", timestamp(now))
+            .param("role", principal.role().name())
+            .param("store", principal.storeId())
+            .param("courier", principal.courierId())
+            .param("visitor", principal.visitor())
+            .param("expires", timestamp(now.plus(IDLE_TIMEOUT)))
             .query(DemoIdentityService::readUser)
             .optional();
-    if (result.isEmpty() || !result.get().principal().equals(principal)) {
+    if (result.isEmpty()) {
       return Optional.empty();
     }
-    extendContext(principal.contextId(), now);
-    User user = result.get();
-    return Optional.of(
-        new DemoUserView(
-            user.id(),
-            user.name(),
-            user.role(),
-            user.store(),
-            user.courier(),
-            now.plus(IDLE_TIMEOUT)));
+    return Optional.of(result.get().view());
   }
 
   void invalidate(UUID context) {
     if (context == null) {
       return;
     }
-    jdbc.sql("UPDATE demo_contexts SET expires_at = GREATEST(created_at, :now) WHERE id = :id")
+    jdbc.sql("UPDATE demo_contexts SET expires_at = created_at WHERE id = :id")
         .param("id", context)
-        .param("now", timestamp(clock.instant()))
         .update();
     jdbc.sql("UPDATE users SET expires_at = :now WHERE context_id = :id")
         .param("id", context)
@@ -98,7 +110,13 @@ class DemoIdentityService {
   }
 
   private boolean lockActiveContext(UUID context, Instant now) {
-    return jdbc.sql("SELECT id FROM demo_contexts WHERE id = :id AND expires_at > :now FOR UPDATE")
+    return jdbc.sql(
+            """
+        WITH locked_context AS MATERIALIZED (
+          SELECT id,expires_at FROM demo_contexts
+                  WHERE id=:id AND expires_at>created_at AND expires_at>:now FOR UPDATE
+        ) SELECT id FROM locked_context WHERE expires_at>clock_timestamp()
+        """)
         .param("id", context)
         .param("now", timestamp(now))
         .query(UUID.class)

@@ -3,6 +3,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { ArrowLeft, LogOut, Package, RefreshCw, Store, Truck, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { api, type DemoRole, type DemoUserView, type OrderView } from '@/lib/api';
+import { CourierWorkspace } from '@/components/courier-workspace';
 
 const roles = [
   { value: 'STORE', label: 'Sou loja', icon: Store },
@@ -101,7 +102,11 @@ export function DemoPanel() {
           <p className="session-summary" role="status">
             {user.displayName}. A sessão expira após duas horas sem uso.
           </p>
-          <OrderWorkspace key={`${user.id}:${user.role}`} user={user} />
+          {user.role === 'COURIER' ? (
+            <CourierWorkspace key={user.id} user={user} />
+          ) : (
+            <OrderWorkspace key={`${user.id}:${user.role}`} user={user} />
+          )}
         </>
       )}
       {!user && !session.isPending && !session.error && (
@@ -133,14 +138,6 @@ function OrderWorkspace({ user }: { user: DemoUserView }) {
   async function refreshOrders() {
     await queryClient.invalidateQueries({ queryKey: ['orders'] });
   }
-
-  if (!enabled)
-    return (
-      <p className="demo-empty">
-        Você entrou como entregador. A disponibilidade e as ofertas estarão disponíveis nas próximas
-        etapas.
-      </p>
-    );
 
   return (
     <div className="order-workspace">
@@ -241,8 +238,8 @@ function CreateOrderForm({
   disabled: boolean;
   onCreated: (order: OrderView) => void;
 }) {
-  const [latitude, setLatitude] = useState('-23.5614');
-  const [longitude, setLongitude] = useState('-46.6559');
+  const [latitude, setLatitude] = useState('-23.5504');
+  const [longitude, setLongitude] = useState('-46.6333');
   const attempt = useRef<{ payload: string; key: string } | null>(null);
   const create = useMutation({
     mutationFn: async () => {
@@ -269,7 +266,7 @@ function CreateOrderForm({
     <form onSubmit={submit} className="create-order-form">
       <p className="demo-description">
         Informe o destino dentro do centro expandido de São Paulo. O exemplo abaixo fica na região
-        da Paulista.
+        da Sé.
       </p>
       <div className="coordinate-inputs">
         <label>
@@ -360,6 +357,12 @@ function OrderDetail({
             <div>
               <dt>Loja</dt>
               <dd>{item.store?.name}</dd>
+            </div>
+            <div>
+              <dt>Coleta</dt>
+              <dd>
+                {item.store.location.latitude}, {item.store.location.longitude}
+              </dd>
             </div>
             <div>
               <dt>Destino</dt>

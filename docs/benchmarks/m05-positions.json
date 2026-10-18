@@ -1,0 +1,92 @@
+{
+  "startedAt": "2026-10-18T22:35:34.228181563Z",
+  "finishedAt": "2026-10-18T22:36:34.258192497Z",
+  "javaVersion": "25.0.4.1+1-LTS",
+  "architecture": "amd64",
+  "sourceSha256": "fdba5cae196b66135f02faae194c61f5cdec2f728a57eac9dca44e8a77f1af1e",
+  "databaseConnectionPath": "Docker bridge IP e porta 5432; controle Testcontainers separado.",
+  "routingManifest": "routing/sp-fixture-manifest.json",
+  "datasetSha256": "edbc4d0b53d21b6b4febe82f4b22b3610f3025398785cc7b44e9c2bfc06e0cbf",
+  "positionPattern": "500 entregadores no recorte da Paulista, uma posição próxima à loja por requisição.",
+  "availableProcessors": 4,
+  "maxHeapBytes": 805306368,
+  "couriers": 500,
+  "requestsPerSecond": 250,
+  "warmupSeconds": 60,
+  "measurementSeconds": 60,
+  "requests": 15000,
+  "sentRequests": 15000,
+  "preSendDrops": 0,
+  "statusCounts": {
+    "202": 15000
+  },
+  "successes": 15000,
+  "failures": 0,
+  "errorExamples": [],
+  "measurementWindows": [
+    {
+      "fromSecond": 0,
+      "offered": 2500,
+      "sent": 2500,
+      "preSendDrops": 0,
+      "successes": 2500,
+      "p95Millis": 13.90136,
+      "p95SuccessfulMillis": 13.90136
+    },
+    {
+      "fromSecond": 10,
+      "offered": 2500,
+      "sent": 2500,
+      "preSendDrops": 0,
+      "successes": 2500,
+      "p95Millis": 10.877677,
+      "p95SuccessfulMillis": 10.877677
+    },
+    {
+      "fromSecond": 20,
+      "offered": 2500,
+      "sent": 2500,
+      "preSendDrops": 0,
+      "successes": 2500,
+      "p95Millis": 13.552981,
+      "p95SuccessfulMillis": 13.552981
+    },
+    {
+      "fromSecond": 30,
+      "offered": 2500,
+      "sent": 2500,
+      "preSendDrops": 0,
+      "successes": 2500,
+      "p95Millis": 11.529399,
+      "p95SuccessfulMillis": 11.529399
+    },
+    {
+      "fromSecond": 40,
+      "offered": 2500,
+      "sent": 2500,
+      "preSendDrops": 0,
+      "successes": 2500,
+      "p95Millis": 13.879497,
+      "p95SuccessfulMillis": 13.879497
+    },
+    {
+      "fromSecond": 50,
+      "offered": 2500,
+      "sent": 2500,
+      "preSendDrops": 0,
+      "successes": 2500,
+      "p95Millis": 11.77368,
+      "p95SuccessfulMillis": 11.77368
+    }
+  ],
+  "completedRequestsPerSecond": 249.97851793774132,
+  "p50Millis": 7.343459,
+  "p95Millis": 12.676337,
+  "p99Millis": 22.199675,
+  "maxMillis": 93.947681,
+  "bufferedPointsAfterDrain": 0,
+  "flushFailures": 0,
+  "maxPersistLagMillis": 617,
+  "pickupSnapMeters": 9.499979951891959,
+  "couriersWithExpectedPersistedPosition": 500
+}

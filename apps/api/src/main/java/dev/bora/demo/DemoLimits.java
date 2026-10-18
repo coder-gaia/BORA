@@ -36,6 +36,10 @@ public class DemoLimits {
       BucketConfiguration.builder()
           .addLimit(limit -> limit.capacity(120).refillGreedy(60, Duration.ofMinutes(1)))
           .build();
+  private static final BucketConfiguration CONFIRMATIONS =
+      BucketConfiguration.builder()
+          .addLimit(limit -> limit.capacity(10).refillGreedy(10, Duration.ofMinutes(1)))
+          .build();
   private final PostgreSQLSelectForUpdateBasedProxyManager<String> buckets;
 
   public DemoLimits(DataSource dataSource) {
@@ -59,6 +63,10 @@ public class DemoLimits {
 
   public void checkPositions(UUID courierId) {
     check("positions:" + Objects.requireNonNull(courierId), POSITIONS);
+  }
+
+  public void checkDeliveryConfirmation(UUID courierId) {
+    check("confirmations:" + Objects.requireNonNull(courierId), CONFIRMATIONS);
   }
 
   @Scheduled(fixedDelay = 600_000, initialDelay = 600_000)

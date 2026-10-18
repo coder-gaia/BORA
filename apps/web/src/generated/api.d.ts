@@ -68,6 +68,94 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/courier/availability': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Ficar online ou offline */
+    post: operations['setCourierAvailability'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/courier/me': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Consultar o entregador e sua posição gravada */
+    get: operations['getCurrentCourier'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/courier/positions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Receber um lote de posições
+     * @description O recibo confirma o recebimento em memória. Consulte a posição gravada após o prazo de gravação.
+     */
+    post: operations['submitCourierPositions'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/courier/route': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Consultar a rota até a próxima etapa */
+    get: operations['getCourierRoute'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/courier/work': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Consultar o trabalho do entregador */
+    get: operations['getCourierWork'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/orders': {
     parameters: {
       query?: never;
@@ -129,6 +217,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/orders/{id}/deliver': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Confirmar a entrega ao cliente */
+    post: operations['deliverOrder'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/orders/{id}/pickup': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Confirmar a coleta na loja */
+    post: operations['pickUpOrder'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/stores/me': {
     parameters: {
       query?: never;
@@ -165,9 +287,57 @@ export interface components {
       /** Formato: uri */
       type: string;
     };
+    AssignedOrderView: {
+      /** Formato: date-time */
+      assignedAt: string;
+      atStoreAt?: string | null;
+      confirmationRequired: boolean;
+      dropoff: components['schemas']['GeoPoint'];
+      /** Formato: uuid */
+      id: string;
+      pickedUpAt?: string | null;
+      /** @enum {string} */
+      status: 'ASSIGNED' | 'AT_STORE' | 'CANCELED' | 'DELIVERED' | 'PICKED_UP' | 'SEARCHING';
+      store: components['schemas']['StoreView'];
+      /** Formato: int64 */
+      version: number;
+    };
+    AvailabilityRequest: {
+      online: boolean;
+      position?: components['schemas']['GeoPoint'];
+    };
     CancelOrderRequest: {
       /** Formato: int64 */
       expectedVersion: number;
+    };
+    CourierRouteView: {
+      /** @enum {string} */
+      destination: 'DROPOFF' | 'PICKUP';
+      /** Formato: double */
+      distanceMeters: number;
+      /** Formato: int64 */
+      durationMillis: number;
+      geometry: components['schemas']['GeoPoint'][];
+      /** Formato: uuid */
+      orderId: string;
+      /** Formato: int64 */
+      simulatedDurationMillis: number;
+      target: components['schemas']['GeoPoint'];
+    };
+    CourierView: {
+      /** Formato: uuid */
+      id: string;
+      location: components['schemas']['GeoPoint'] | null;
+      locationUpdatedAt: (null | string) | null;
+      name: string;
+      /** @enum {string} */
+      status: 'AVAILABLE' | 'BUSY' | 'OFFERED' | 'OFFLINE';
+      /** Formato: int64 */
+      version: number;
+    };
+    CourierWorkView: {
+      courier: components['schemas']['CourierView'];
+      order?: components['schemas']['AssignedOrderView'] | null;
     };
     CreateOrderRequest: {
       dropoff: components['schemas']['DropoffRequest'];
@@ -175,6 +345,11 @@ export interface components {
     CsrfView: {
       headerName: string;
       token: string;
+    };
+    DeliverRequest: {
+      confirmationCode?: string;
+      /** Formato: int64 */
+      expectedVersion: number;
     };
     DemoLogin: {
       /** @enum {string} */
@@ -260,6 +435,28 @@ export interface components {
       timeline: components['schemas']['OrderEventView'][];
       /** Formato: int64 */
       version: number;
+    };
+    PickUpRequest: {
+      /** Formato: int64 */
+      expectedVersion: number;
+    };
+    PositionBatchRequest: {
+      positions: components['schemas']['PositionSample'][];
+    };
+    PositionReceipt: {
+      /** Formato: int32 */
+      accepted: number;
+      /** Formato: date-time */
+      flushDeadline: string;
+      /** Formato: int32 */
+      ignored: number;
+      /** Formato: date-time */
+      latestRecordedAt: string;
+    };
+    PositionSample: {
+      position: components['schemas']['GeoPoint'];
+      /** Formato: date-time */
+      recordedAt: string;
     };
     SessionView: {
       authenticated: boolean;
@@ -398,6 +595,314 @@ export interface operations {
         };
         content: {
           '*/*': components['schemas']['SessionView'];
+        };
+      };
+    };
+  };
+  setCourierAvailability: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AvailabilityRequest'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          '*/*': components['schemas']['CourierView'];
+        };
+      };
+      /** @description Confira a disponibilidade e a posição informadas. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Entre na demonstração para continuar. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O token CSRF ou o papel não permite esta ação. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Uma oferta ou entrega impede esta mudança de disponibilidade. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description A posição deve ficar dentro da área atendida e próxima a uma via acessível. */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O grafo de roteamento ainda não está disponível. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
+  getCurrentCourier: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          '*/*': components['schemas']['CourierView'];
+        };
+      };
+      /** @description Entre na demonstração para continuar. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O papel ou a sessão não permite esta ação. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
+  submitCourierPositions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PositionBatchRequest'];
+      };
+    };
+    responses: {
+      /** @description Accepted */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          '*/*': components['schemas']['PositionReceipt'];
+        };
+      };
+      /** @description Confira as posições e os horários do lote. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Entre na demonstração para continuar. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O token CSRF ou o papel não permite esta ação. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Fique online antes de enviar posições. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description As posições devem ficar dentro da área atendida e próximas a vias acessíveis. */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Limite de envio de posições atingido. */
+      429: {
+        headers: {
+          /** @description Segundos até uma nova tentativa, quando o bloqueio tem prazo conhecido. */
+          'Retry-After'?: number;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O roteamento ou a gravação de posições está temporariamente indisponível. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
+  getCourierRoute: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          '*/*': components['schemas']['CourierRouteView'];
+        };
+      };
+      /** @description Entre na demonstração para continuar. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O papel ou a sessão não permite esta ação. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Não há entrega ativa com posição recente para calcular a rota. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Não há rota de moto disponível entre os pontos. */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O grafo de roteamento ainda não está disponível. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
+  getCourierWork: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          '*/*': components['schemas']['CourierWorkView'];
+        };
+      };
+      /** @description Entre na demonstração para continuar. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O papel ou a sessão não permite esta ação. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
         };
       };
     };
@@ -653,6 +1158,159 @@ export interface operations {
         };
       };
       /** @description A versão ou a etapa do pedido mudou. Consulte o pedido novamente. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
+  deliverOrder: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DeliverRequest'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          '*/*': components['schemas']['AssignedOrderView'];
+        };
+      };
+      /** @description Confira o pedido, a versão e o código informado. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Entre na demonstração para continuar. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O token CSRF ou o papel não permite esta ação. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description A entrega não pertence ao entregador autenticado. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Confira a etapa, a versão, a posição e o código da entrega. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Limite de tentativas do código de confirmação atingido. */
+      429: {
+        headers: {
+          /** @description Segundos até uma nova tentativa, quando o bloqueio tem prazo conhecido. */
+          'Retry-After'?: number;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
+  pickUpOrder: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PickUpRequest'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          '*/*': components['schemas']['AssignedOrderView'];
+        };
+      };
+      /** @description Confira o pedido, a versão e o código informado. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Entre na demonstração para continuar. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O token CSRF ou o papel não permite esta ação. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description A entrega não pertence ao entregador autenticado. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Confira a etapa, a versão, a posição e o código da entrega. */
       409: {
         headers: {
           [name: string]: unknown;

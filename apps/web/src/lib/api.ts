@@ -1,4 +1,4 @@
-import type { components } from '@/generated/api';
+import type { components, paths } from '@/generated/api';
 
 export type SessionView = components['schemas']['SessionView'];
 export type DemoUserView = components['schemas']['DemoUserView'];
@@ -7,6 +7,20 @@ export type OrderPage = components['schemas']['OrderPage'];
 export type OrderView = components['schemas']['OrderView'];
 export type OrderSummary = components['schemas']['OrderSummary'];
 export type DemoRole = NonNullable<DemoUserView['role']>;
+export type PositionReceipt = components['schemas']['PositionReceipt'];
+export type CourierWorkView = components['schemas']['CourierWorkView'];
+export type CourierRouteView = components['schemas']['CourierRouteView'];
+type CourierView = components['schemas']['CourierView'];
+type GeoPoint = components['schemas']['GeoPoint'];
+type AvailabilityRequest = components['schemas']['AvailabilityRequest'];
+type PositionBatchRequest = components['schemas']['PositionBatchRequest'];
+type AssignedOrderView = components['schemas']['AssignedOrderView'];
+type PickupBody = NonNullable<
+  paths['/api/v1/orders/{id}/pickup']['post']['requestBody']
+>['content']['application/json'];
+type DeliveryBody = NonNullable<
+  paths['/api/v1/orders/{id}/deliver']['post']['requestBody']
+>['content']['application/json'];
 
 type CsrfView = components['schemas']['CsrfView'];
 type DemoLogin = components['schemas']['DemoLogin'];
@@ -98,4 +112,24 @@ export const api = {
     post<OrderView>(`/api/v1/orders/${encodeURIComponent(id)}/cancel`, {
       expectedVersion,
     } satisfies CancelOrderRequest),
+  courierWork: () => request<CourierWorkView>('/api/v1/courier/work'),
+  courierRoute: () => request<CourierRouteView>('/api/v1/courier/route'),
+  availability: (online: boolean, position?: GeoPoint) =>
+    post<CourierView>('/api/v1/courier/availability', {
+      online,
+      position,
+    } satisfies AvailabilityRequest),
+  sendPosition: (position: GeoPoint, recordedAt: string) =>
+    post<PositionReceipt>('/api/v1/courier/positions', {
+      positions: [{ recordedAt, position }],
+    } satisfies PositionBatchRequest),
+  pickUpOrder: (id: string, expectedVersion: number) =>
+    post<AssignedOrderView>(`/api/v1/orders/${encodeURIComponent(id)}/pickup`, {
+      expectedVersion,
+    } satisfies PickupBody),
+  deliverOrder: (id: string, expectedVersion: number, confirmationCode?: string) =>
+    post<AssignedOrderView>(`/api/v1/orders/${encodeURIComponent(id)}/deliver`, {
+      expectedVersion,
+      confirmationCode,
+    } satisfies DeliveryBody),
 };
