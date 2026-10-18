@@ -8,11 +8,21 @@ O ambiente precisa exercitar concorrência entre duas instâncias da API e permi
 gradual dentro de uma única VM. Reiniciar o proxy a cada troca da web interromperia conexões
 e invalidaria a continuidade que se pretende medir.
 
+A medição pública do M02 também identificou encerramentos de conexões HTTP persistentes
+durante reloads do Caddy, mesmo mantendo seu processo. Um teste com as APIs imóveis reproduziu
+o problema ao alternar apenas os upstreams por reload. Preservar o container não basta para
+preservar essas conexões.
+
 ## Decisão
 
 Manter duas APIs atrás de um processo Caddy persistente. Antes de substituir uma API, removê-la
-do balanceamento por reload da configuração, aguardar a drenagem e esperar a readiness da nova
-instância. A outra API continua atendendo durante esse intervalo.
+do balanceamento por um marcador público trocado atomicamente, aguardar a drenagem e esperar
+a readiness da nova instância. A outra API continua atendendo durante esse intervalo.
+
+O Caddy lê o modo `api1`, `api2` ou `both` uma vez por requisição e escolhe entre três
+handlers de proxy com upstreams estáticos e health checks. A troca normal de aplicação
+não recarrega o servidor HTTP. Uma alteração real do próprio Caddyfile ainda exige reload;
+a recuperação para bundles antigos mantém o procedimento legado quando necessário.
 
 Publicar a web como artefato estático em uma imagem versionada. Preparar cada release em um
 diretório próprio, preservar assets com hash em armazenamento compartilhado e ativar o HTML
@@ -29,9 +39,14 @@ administrativa. O servidor SSH é identificado por uma chave previamente registr
 ## Consequências
 
 Os testes precisam exercitar requisições reais durante publicação e falhas, incluindo recuperação
-automática e manual. O rollback troca imagens e arquivos estáticos, preservando os dados e a
-versão do banco. Migrações precisam ser compatíveis com duas versões da API em execução.
+automática e manual, com clientes que reutilizam conexões. O rollback troca imagens e arquivos
+estáticos, preservando os dados e a versão do banco. Migrações precisam ser compatíveis com
+duas versões da API em execução.
 
 Assets, imagens e bundles do ponto de recuperação precisam permanecer disponíveis. A VM e o
 banco continuam sendo pontos únicos de falha. Conexões WebSocket poderão reconectar durante
 alterações de configuração e precisarão recuperar o estado quando forem implementadas.
+
+Referências: [variáveis por requisição](https://caddyserver.com/docs/caddyfile/directives/vars),
+[placeholders de arquivos](https://caddyserver.com/docs/conventions#placeholders) e
+[comportamento da parada dos servidores no Caddy 2.11.7](https://github.com/caddyserver/caddy/blob/v2.11.7/modules/caddyhttp/app.go).

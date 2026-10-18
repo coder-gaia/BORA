@@ -22,6 +22,9 @@ if [[ -f $BORA_ROOT/state.env ]]; then
   if [[ $BUNDLE_VERSION == "$target_version" && $API1_VERSION == "$target_version" \
     && $API2_VERSION == "$target_version" && $WEB_VERSION == "$target_version" ]] \
     && service_ready api1 && service_ready api2; then
+    copy_proxy_config
+    apply_proxy_config
+    if proxy_uses_marker; then set_upstreams 'api1:8080 api2:8080'; fi
     public_smoke
     log "A versão já está ativa: $target_version"
     exit 0
@@ -72,6 +75,7 @@ fi
 
 changes_started=true
 copy_proxy_config
+apply_proxy_config
 dc up --detach --wait --wait-timeout "$READY_TIMEOUT" db
 
 if service_running caddy; then

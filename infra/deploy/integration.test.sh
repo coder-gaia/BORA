@@ -12,6 +12,8 @@ source_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 test_id="$(date +%s)-$RANDOM"
 project="bora-script-test-$test_id"
 registry="bora-script-registry-$test_id"
+persistent_probe="bora-script-probe-$test_id"
+node_image=node:24.22.0-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5
 registry_port=${BORA_TEST_REGISTRY_PORT:-15000}
 http_port=${BORA_TEST_HTTP_PORT:-18080}
 old_version=1111111111111111111111111111111111111111
@@ -31,6 +33,7 @@ export API1_VERSION=$old_version API2_VERSION=$old_version WEB_VERSION=$old_vers
 cleanup() {
   touch "$test_root/stop-probe"
   if [[ -n $probe_pid ]]; then wait "$probe_pid" || true; fi
+  docker rm --force "$persistent_probe" >/dev/null 2>&1 || true
   docker network disconnect "${project}_edge" "$HOSTNAME" >/dev/null 2>&1 || true
   if [[ -f $test_root/state.env ]]; then
     set -a
@@ -116,6 +119,128 @@ db_before=$(docker compose --project-name "$project" --env-file "$test_root/env.
   -f "$test_root/releases/$old_version/infra/compose/compose.prod.yml" \
   -f "$test_root/releases/$old_version/infra/compose/compose.release-test.yml" ps --quiet db)
 
+# Um marcador inválido ou ausente fecha somente as rotas da API.
+for marker in invalid missing; do
+  if [[ $marker == invalid ]]; then
+    printf '%s\n' invalid > "$test_root/config/upstream-mode"
+  else
+    mv "$test_root/config/upstream-mode" "$test_root/config/upstream-mode.saved"
+  fi
+  test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 5 \
+    "$BORA_PUBLIC_URL/actuator/health/readiness")" = 503
+  test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 5 \
+    "$BORA_PUBLIC_URL/")" = 200
+  if [[ $marker == missing ]]; then
+    mv "$test_root/config/upstream-mode.saved" "$test_root/config/upstream-mode"
+  fi
+done
+printf '%s\n' both > "$test_root/config/upstream-mode"
+
+# A configuração legada usa reload; a volta simula interrupção antes de aplicar o arquivo.
+legacy_root="$test_root/legacy-proxy"
+mkdir -p "$legacy_root/infra/caddy"
+cp -R "$source_root/infra/compose" "$legacy_root/infra/"
+cat > "$legacy_root/infra/caddy/Caddyfile" <<'BORA_LEGACY_CADDY'
+{
+  admin localhost:2019
+  email {$ACME_EMAIL}
+  grace_period 45s
+}
+
+{$SITE_ADDRESS} {
+  @api path /api /api/* /ws /ws/* /actuator/health /actuator/health/readiness /actuator/health/liveness
+  handle @api {
+    reverse_proxy {$API_UPSTREAMS:api1:8080 api2:8080} {
+      lb_policy round_robin
+      lb_try_duration 5s
+      lb_try_interval 100ms
+      health_uri /actuator/health/readiness
+      health_status 200
+      health_interval 1s
+      health_timeout 2s
+      health_passes 1
+      health_fails 1
+      fail_duration 5s
+      max_fails 1
+      transport http {
+        dial_timeout 2s
+        response_header_timeout 30s
+      }
+    }
+  }
+  @private path /actuator /actuator/*
+  handle @private {
+    respond 404
+  }
+  handle /assets/* {
+    root * /srv/bora
+    file_server
+  }
+  handle {
+    root * /srv/bora/current
+    try_files {path} /index.html
+    file_server
+  }
+}
+BORA_LEGACY_CADDY
+(
+  # shellcheck source=infra/deploy/common.sh
+  source "$test_root/releases/$old_version/infra/deploy/common.sh"
+  initialize
+  select_bundle "$old_version"
+  marker_bundle=$BUNDLE_ROOT
+  BUNDLE_ROOT=$legacy_root
+  copy_proxy_config
+  test "$PROXY_CONFIG_CHANGED" = true
+  test "$(stat -c '%a' "$BORA_ROOT/.proxy-config-pending")" = 600
+  apply_proxy_config
+  test ! -e "$BORA_ROOT/.proxy-config-pending"
+  if proxy_uses_marker; then
+    printf '%s\n' 'O bundle legado foi tratado como configuração por marcador.' >&2
+    exit 1
+  fi
+  for service in api1 api2; do
+    set_upstreams "$service:8080"
+    legacy_config=$(dc exec -T caddy wget --quiet --output-document=- http://127.0.0.1:2019/config/)
+    [[ $legacy_config == *"\"dial\":\"$service:8080\""* ]]
+    case $service in api1) other=api2 ;; api2) other=api1 ;; esac
+    [[ $legacy_config != *"\"dial\":\"$other:8080\""* ]]
+    public_smoke
+  done
+  set_upstreams 'api1:8080 api2:8080'
+
+  BUNDLE_ROOT=$marker_bundle
+  copy_proxy_config
+  test "$PROXY_CONFIG_CHANGED" = true
+  test -f "$BORA_ROOT/.proxy-config-pending"
+  pending_inode=$(stat -c '%i' "$BORA_CONFIG_DIR/Caddyfile")
+  PROXY_CONFIG_CHANGED=false
+  copy_proxy_config
+  test "$PROXY_CONFIG_CHANGED" = true
+  test "$(stat -c '%i' "$BORA_CONFIG_DIR/Caddyfile")" = "$pending_inode"
+  apply_proxy_config
+  test ! -e "$BORA_ROOT/.proxy-config-pending"
+  applied_config=$(dc exec -T caddy wget --quiet --output-document=- http://127.0.0.1:2019/config/)
+  [[ $applied_config == *'"upstream_mode"'* ]]
+  set_upstreams 'api1:8080 api2:8080'
+  public_smoke
+)
+
+# O probe Node mantém conexões reutilizáveis e não repete requisições que falharam.
+docker create --name "$persistent_probe" --network "${project}_edge" \
+  --cap-drop ALL --security-opt no-new-privileges:true \
+  --memory 256m --entrypoint node "$node_image" \
+  /tmp/check-http-continuity.mjs --url "$BORA_PUBLIC_URL" \
+  --duration 180 --interval 50 --timeout 5000 >/dev/null
+docker cp "$source_root/scripts/check-http-continuity.mjs" \
+  "$persistent_probe:/tmp/check-http-continuity.mjs"
+caddy_config_before=$(docker exec "$caddy_before" wget --quiet --output-document=- \
+  http://127.0.0.1:2019/config/)
+caddy_shutdowns_before=$(docker logs "$caddy_before" 2>&1 \
+  | grep -c 'servers shutting down; grace period initiated' || true)
+docker start "$persistent_probe" >/dev/null
+sleep 1
+
 probe() {
   local code
   while [[ ! -e $test_root/stop-probe ]]; do
@@ -163,6 +288,8 @@ if grep -vx '200' "$test_root/http-probe.log"; then
   printf '%s\n' 'O teste registrou respostas HTTP diferentes de 200.' >&2
   exit 1
 fi
+# Restaura explicitamente o contexto externo após o teste isolado de configuração.
+# shellcheck disable=SC2031
 export API1_VERSION=$new_version API2_VERSION=$new_version WEB_VERSION=$new_version DB_VERSION=$old_version
 caddy_after=$(docker compose --project-name "$project" --env-file "$test_root/env.production" \
   -f "$test_root/releases/$old_version/infra/compose/compose.prod.yml" \
@@ -172,5 +299,23 @@ db_after=$(docker compose --project-name "$project" --env-file "$test_root/env.p
   -f "$test_root/releases/$old_version/infra/compose/compose.prod.yml" \
   -f "$test_root/releases/$old_version/infra/compose/compose.release-test.yml" ps --quiet db)
 test "$db_before" = "$db_after"
-printf 'Integração aprovada: bootstrap, atualização, rollback automático e manual; %s respostas HTTP 200, Caddy preservado.\n' \
+test "$(cat "$test_root/config/upstream-mode")" = both
+caddy_config_after=$(docker exec "$caddy_after" wget --quiet --output-document=- \
+  http://127.0.0.1:2019/config/)
+test "$caddy_config_before" = "$caddy_config_after"
+caddy_shutdowns_after=$(docker logs "$caddy_after" 2>&1 \
+  | grep -c 'servers shutting down; grace period initiated' || true)
+test "$caddy_shutdowns_before" = "$caddy_shutdowns_after"
+[[ $(docker inspect --format '{{.State.Running}}' "$persistent_probe") == true ]] || {
+  docker logs "$persistent_probe"
+  printf '%s\n' 'O probe persistente terminou antes de concluir as atualizações e os rollbacks.' >&2
+  exit 1
+}
+persistent_status=$(docker wait "$persistent_probe")
+docker logs "$persistent_probe"
+[[ $persistent_status == 0 ]] || {
+  printf '%s\n' 'O probe persistente registrou falhas HTTP ou de conexão.' >&2
+  exit 1
+}
+printf 'Integração aprovada: bootstrap, atualização, rollback automático e manual; %s respostas curl HTTP 200, probe Node sem falhas, Caddy e banco preservados, sem reload.\n' \
   "$(wc -l < "$test_root/http-probe.log")"

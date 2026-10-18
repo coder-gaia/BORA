@@ -122,10 +122,22 @@ bash /opt/bora/releases/<sha>/infra/deploy/deploy.sh <sha>
 ```
 
 O deploy adquire um lock `flock`, baixa as imagens e prepara os assets antes de alterar o
-tráfego. O Caddy retira uma API do balanceamento; o script aguarda a drenagem, troca a instância
-e espera a readiness. Repete a operação com a segunda API. Só então ativa o HTML da nova web
-por uma troca atômica de symlink. Assets com hash de releases anteriores permanecem disponíveis
-para páginas já abertas. O processo do Caddy continua em execução.
+tráfego. O script troca atomicamente `/opt/bora/config/upstream-mode`, que contém `api1`,
+`api2` ou `both`. O Caddy lê esse modo uma vez por requisição para escolher um dos três
+balanceamentos estáticos. O script aguarda a drenagem, troca uma instância e espera a readiness,
+repetindo a operação com a segunda API. Só então ativa o HTML da nova web por uma troca
+atômica de symlink. Assets com hash de releases anteriores permanecem disponíveis para páginas
+já abertas. A publicação normal da aplicação não recarrega o servidor HTTP do Caddy.
+
+O Caddyfile só é substituído quando seu conteúdo muda. Essa mudança real exige reload e pode
+encerrar conexões HTTP ociosas; a recuperação para um bundle com configuração antiga também
+pode usar esse caminho. Preservar o processo não elimina esse efeito. A continuidade medida
+na atualização de aplicação pressupõe a mesma configuração de proxy.
+
+Antes de substituir o Caddyfile, o deploy registra `.proxy-config-pending` fora do diretório
+público. A pendência só é removida após aplicar a configuração ou confirmar que o próximo
+início do proxy a lerá. Assim, uma interrupção entre gravar e recarregar não faz uma nova
+tentativa confundir o arquivo em disco com a configuração em execução.
 
 A readiness inclui o banco. O teste de fumaça consulta a página inicial e a readiness pela
 origem pública. Se uma etapa falhar, o script mantém o resultado de falha e tenta recuperar
@@ -169,7 +181,8 @@ testa bootstrap, atualização, recuperação automática e rollback manual, e r
 projeto de teste. Nenhum recurso do ambiente de desenvolvimento é usado como destino.
 
 O resultado informa quantas requisições receberam HTTP 200 durante a atualização e a falha
-simulada, e confirma que o container do Caddy foi preservado. Esse resultado descreve as
+simulada. O teste usa também um cliente Node com conexões persistentes e verifica que o
+servidor HTTP não foi recarregado durante as trocas normais. Esse resultado descreve as
 condições exercitadas no teste, sem garantir disponibilidade absoluta da VM ou do provedor.
 
 Na validação local de 18/10/2026 em amd64, 1.376 requisições receberam HTTP 200 durante a

@@ -4,6 +4,26 @@
 	grace_period 45s
 }
 
+(api_proxy) {
+	reverse_proxy {args[:]} {
+		lb_policy round_robin
+		lb_try_duration 5s
+		lb_try_interval 100ms
+		health_uri /actuator/health/readiness
+		health_status 200
+		health_interval 1s
+		health_timeout 2s
+		health_passes 1
+		health_fails 1
+		fail_duration 5s
+		max_fails 1
+		transport http {
+			dial_timeout 2s
+			response_header_timeout 30s
+		}
+	}
+}
+
 {$SITE_ADDRESS} {
 	log {
 		output stdout
@@ -22,22 +42,22 @@
 
 	@api path /api /api/* /ws /ws/* /actuator/health /actuator/health/readiness /actuator/health/liveness
 	handle @api {
-		reverse_proxy {$API_UPSTREAMS:api1:8080 api2:8080} {
-			lb_policy round_robin
-			lb_try_duration 5s
-			lb_try_interval 100ms
-			health_uri /actuator/health/readiness
-			health_status 200
-			health_interval 1s
-			health_timeout 2s
-			health_passes 1
-			health_fails 1
-			fail_duration 5s
-			max_fails 1
-			transport http {
-				dial_timeout 2s
-				response_header_timeout 30s
-			}
+		vars upstream_mode {file./etc/caddy/upstream-mode}
+		@mode_api1 vars upstream_mode api1
+		@mode_api2 vars upstream_mode api2
+		@mode_both vars upstream_mode both
+
+		handle @mode_api1 {
+			import api_proxy api1:8080
+		}
+		handle @mode_api2 {
+			import api_proxy api2:8080
+		}
+		handle @mode_both {
+			import api_proxy api1:8080 api2:8080
+		}
+		handle {
+			respond 503
 		}
 	}
 

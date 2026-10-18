@@ -139,10 +139,15 @@ async function request(url, path, timeoutMs, signal) {
         failure = { reason: 'not_ready' };
       }
     }
-  } catch {
+  } catch (error) {
     failure = {
       reason: signal.aborted ? 'interrupted' : timeoutSignal.aborted ? 'timeout' : 'request_error',
     };
+    if (failure.reason === 'request_error') {
+      failure.errorName = error.name;
+      failure.errorCode = error.cause?.code;
+      failure.errorMessage = error.cause?.message ?? error.message;
+    }
   }
 
   return {

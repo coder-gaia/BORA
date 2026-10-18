@@ -6,6 +6,10 @@ Bora é uma demonstração de despacho de entregas: lojas criam pedidos e o sist
 entregador que chega mais rápido. A base local já executa banco, API e web com uma única
 composição Docker. As funcionalidades de entrega estão em desenvolvimento.
 
+A [demonstração pública](https://bora.alexandregaia.me/) apresenta a saúde dos serviços.
+O domínio já contém as máquinas de estado, o esquema espacial e 40 lojas fictícias;
+os fluxos de entrega ainda serão disponibilizados na interface.
+
 ## Executar localmente
 
 Pré-requisitos: Git e Docker com Compose. No Windows, abra o Docker Desktop com o mecanismo
@@ -110,7 +114,7 @@ de uma versão inválida. A imagem PostGIS também é verificada em runners amd6
 A documentação de [desenvolvimento](docs/desenvolvimento.md) explica as verificações e a
 organização do código.
 
-## Stack
+## Tecnologias
 
 | Componente                            | Versão fixada   |
 | ------------------------------------- | --------------- |
@@ -146,6 +150,8 @@ scripts/        regras, formatação e instalação do hook local
 ```
 
 Veja a [arquitetura](docs/arquitetura.md) e as [decisões técnicas](docs/decisoes/0001-fundacao.md).
+O guia de [domínio e persistência](docs/dominio.md) descreve os estados, as garantias do banco
+e os comandos para conferir os dados iniciais.
 
 ## Publicação
 

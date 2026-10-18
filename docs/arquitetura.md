@@ -1,8 +1,9 @@
 # Arquitetura
 
 Bora mantém API, simulador e interface em um monorepo. O backend evolui como monolito modular,
-com transações locais e fronteiras verificáveis. A base atual contém apenas o processo da API,
-saúde operacional e a migração que habilita PostGIS. O simulador ainda não executa cenários.
+com transações locais e fronteiras verificáveis. A base atual contém saúde operacional,
+máquinas de estado, esquema PostGIS e histórico transacional dos pedidos. O simulador ainda
+não executa cenários.
 
 ```mermaid
 flowchart LR
@@ -17,9 +18,10 @@ da disponibilidade do banco. Os detalhes internos do banco não são expostos pe
 
 ## Evolução prevista
 
-Os módulos de identidade, lojas, entregadores, pedidos, despacho, roteamento, rastreio, tempo
-real, operação e demonstração serão introduzidos conforme seus comportamentos existirem.
-Spring Modulith já está incluído para apoiar a verificação dessas fronteiras.
+Os módulos `orders`, `couriers` e `dispatch` contêm os primeiros contratos do domínio.
+Entidades e escrita transacional de pedidos ficam em `orders.internal`; o teste Modulith
+verifica as fronteiras. Os demais módulos serão introduzidos conforme seus comportamentos
+existirem. O [guia de domínio](dominio.md) descreve estados, esquema e invariantes.
 
 As decisões que orientam essa evolução são:
 
@@ -31,7 +33,7 @@ As decisões que orientam essa evolução são:
 - Autorizar cada pedido e assinatura WebSocket conforme o acesso ao recurso.
 - Permitir atualização gradual com migrações compatíveis e reconexão automática do tempo real.
 
-Na implantação planejada, duas APIs compartilharão uma VM e um banco. Essa configuração permite
+Na implantação atual, duas APIs compartilham uma VM e um banco. Essa configuração permite
 exercitar concorrência e atualizações graduais, mas a VM continua sendo um ponto único de falha.
 Consumo de memória, latência, fluidez do mapa e comportamento durante atualizações serão medidos
 com os cenários e as condições de teste registrados na documentação.

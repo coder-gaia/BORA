@@ -68,19 +68,82 @@ dc() {
 
 copy_proxy_config() {
   local temporary
+  PROXY_CONFIG_CHANGED=false
+  if [[ -e $BORA_ROOT/.proxy-config-pending ]]; then PROXY_CONFIG_CHANGED=true; fi
   mkdir -p "$BORA_CONFIG_DIR" || return 1
   # O Caddy descarta capabilities e precisa atravessar o diretório de outro UID.
   # Este diretório contém apenas a configuração pública do proxy.
   chmod 755 "$BORA_CONFIG_DIR" || return 1
+  if [[ ! -e $BORA_CONFIG_DIR/upstream-mode ]]; then
+    write_upstream_mode both || return 1
+  fi
+  if [[ -f $BORA_CONFIG_DIR/Caddyfile ]] \
+    && cmp -s "$BUNDLE_ROOT/infra/caddy/Caddyfile" "$BORA_CONFIG_DIR/Caddyfile"; then
+    chmod 644 "$BORA_CONFIG_DIR/Caddyfile" || return 1
+    return 0
+  fi
   temporary=$(mktemp "$BORA_CONFIG_DIR/.Caddyfile.XXXXXX") || return 1
   cp "$BUNDLE_ROOT/infra/caddy/Caddyfile" "$temporary" || return 1
   chmod 644 "$temporary" || return 1
-  mv -f "$temporary" "$BORA_CONFIG_DIR/Caddyfile"
+  # Uma interrupção após a troca do arquivo não pode ser confundida com reload concluído.
+  : > "$BORA_ROOT/.proxy-config-pending" || return 1
+  chmod 600 "$BORA_ROOT/.proxy-config-pending" || return 1
+  mv -f "$temporary" "$BORA_CONFIG_DIR/Caddyfile" || return 1
+  PROXY_CONFIG_CHANGED=true
+}
+
+proxy_uses_marker() {
+  grep -Eq '^[[:space:]]*vars[[:space:]]+upstream_mode[[:space:]]' "$BORA_CONFIG_DIR/Caddyfile"
+}
+
+upstream_mode() {
+  case $1 in
+    api1:8080) printf '%s' api1 ;;
+    api2:8080) printf '%s' api2 ;;
+    'api1:8080 api2:8080') printf '%s' both ;;
+    *) fail 'Conjunto de APIs inválido.'; return 1 ;;
+  esac
+}
+
+write_upstream_mode() {
+  local mode=$1 temporary
+  case $mode in api1|api2|both) ;; *) fail 'Modo de upstream inválido.'; return 1 ;; esac
+  temporary=$(mktemp "$BORA_CONFIG_DIR/.upstream-mode.XXXXXX") || return 1
+  printf '%s\n' "$mode" > "$temporary" || return 1
+  chmod 644 "$temporary" || return 1
+  mv -f "$temporary" "$BORA_CONFIG_DIR/upstream-mode"
+}
+
+apply_proxy_config() {
+  local upstreams=${1:-'api1:8080 api2:8080'} mode caddy_id
+  mode=$(upstream_mode "$upstreams") || return 1
+  if [[ ${PROXY_CONFIG_CHANGED:-false} == true || -e $BORA_ROOT/.proxy-config-pending ]]; then
+    # Falha ao consultar o daemon não equivale a um proxy parado.
+    caddy_id=$(dc ps --quiet caddy) || return 1
+    if [[ -n $caddy_id ]]; then
+      if proxy_uses_marker; then write_upstream_mode "$mode" || return 1; fi
+      log 'Aplicando alteração real da configuração do Caddy por reload.'
+      dc exec -T -e "API_UPSTREAMS=$upstreams" caddy caddy reload \
+        --config /etc/caddy/Caddyfile --adapter caddyfile || return 1
+    fi
+    # Sem proxy em execução, o próximo startup lerá o arquivo já preparado.
+    rm -f "$BORA_ROOT/.proxy-config-pending" || return 1
+  fi
+  PROXY_CONFIG_CHANGED=false
 }
 
 set_upstreams() {
-  dc exec -T -e "API_UPSTREAMS=$1" caddy caddy reload \
-    --config /etc/caddy/Caddyfile --adapter caddyfile
+  local mode
+  mode=$(upstream_mode "$1") || return 1
+  [[ ${PROXY_CONFIG_CHANGED:-false} == false && ! -e $BORA_ROOT/.proxy-config-pending ]] \
+    || fail 'Aplique a configuração do Caddy antes de trocar as APIs.' || return 1
+  if proxy_uses_marker; then
+    write_upstream_mode "$mode"
+  else
+    # Bundles anteriores mantêm a drenagem legada, com reload e fechamento de conexões ociosas.
+    dc exec -T -e "API_UPSTREAMS=$1" caddy caddy reload \
+      --config /etc/caddy/Caddyfile --adapter caddyfile
+  fi
 }
 
 service_ready() {
@@ -165,6 +228,7 @@ restore_previous() {
     fail 'Nenhuma API está pronta. Recuperação manual necessária; o banco foi preservado.'
     return 1
   fi
+  apply_proxy_config "$second:8080" || return 1
   replace_api "$first" "$first_version" "$second" || return 1
   replace_api "$second" "$second_version" "$first" || return 1
   activate_web "$PREVIOUS_WEB_VERSION" || return 1
@@ -190,7 +254,7 @@ registry_cleanup() {
 initialize() {
   local command domain key
   umask 077
-  for command in docker flock curl sed mktemp realpath; do
+  for command in docker flock curl sed mktemp realpath cmp grep; do
     command -v "$command" >/dev/null || fail "Comando ausente: $command" || return 1
   done
   BORA_ROOT=$(realpath -e "${BORA_ROOT:-/opt/bora}") || return 1

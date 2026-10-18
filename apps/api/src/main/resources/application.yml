@@ -11,6 +11,14 @@ spring:
   flyway:
     clean-disabled: true
     validate-on-migrate: true
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        type:
+          json_format_mapper: jackson3
   threads:
     virtual:
       enabled: true
