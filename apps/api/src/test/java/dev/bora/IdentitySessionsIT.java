@@ -11,8 +11,11 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Base64;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -27,6 +30,8 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.boot.web.server.context.WebServerApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.session.Session;
+import org.springframework.session.SessionRepository;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -63,6 +68,7 @@ class IdentitySessionsIT {
   }
 
   @Autowired JdbcClient jdbc;
+  @Autowired SessionRepository<? extends Session> sessions;
   @Autowired RoutingService routing;
   @LocalServerPort int port;
   private final JsonMapper json = JsonMapper.builder().build();
@@ -313,6 +319,107 @@ class IdentitySessionsIT {
     }
   }
 
+  @Test
+  void lateAnonymousReadCannotRevertLoginOrRestoreTheOldSession() throws Exception {
+    try (Browser browser = new Browser()) {
+      String csrf = browser.csrf(port);
+      String oldId = browser.sessionId();
+      String oldPrimary = sessionPrimary(oldId);
+      // Reproduz a leitura pública iniciada antes do login e finalizada depois dele.
+      Runnable finishOldRead = deferredReadCommit(sessions, oldId, true);
+
+      HttpResponse<String> login =
+          browser.request(secondPort, "POST", "/auth/demo", "{\"role\":\"STORE\"}", csrf);
+      assertThat(login.statusCode()).isEqualTo(200);
+      String user = tree(login).path("user").path("id").asString();
+      String authenticatedId = browser.sessionId();
+      finishOldRead.run();
+
+      assertThat(sessions.findById(authenticatedId)).isNotNull();
+      assertThat(sessions.findById(oldId)).isNull();
+      assertThat(sessionPrimary(authenticatedId)).isNotEqualTo(oldPrimary);
+      // A consulta CSRF subsequente não pode trocar o cookie por uma sessão anônima.
+      browser.csrf(port);
+      for (int target : new int[] {port, secondPort}) {
+        JsonNode me = tree(browser.request(target, "GET", "/auth/me", null, null));
+        assertThat(me.path("authenticated").asBoolean()).isTrue();
+        assertThat(me.path("user").path("id").asString()).isEqualTo(user);
+        assertThat(me.path("user").path("role").asString()).isEqualTo("STORE");
+      }
+    }
+  }
+
+  @Test
+  void pausedOldReadCannotUndoRoleMigrationOrResurrectLogout() throws Exception {
+    try (Browser browser = new Browser()) {
+      JsonNode store = tree(browser.login(port, "STORE")).path("user");
+      UUID originalContext = context(UUID.fromString(store.path("id").asString()));
+      String oldId = browser.sessionId();
+      String csrf = browser.csrf(port);
+      // Cobre também a pausa entre carregar a sessão antiga e registrar o acesso.
+      Runnable finishOldRead = deferredReadCommit(sessions, oldId, false);
+      HttpResponse<String> switched =
+          browser.request(secondPort, "POST", "/auth/demo", "{\"role\":\"COURIER\"}", csrf);
+      assertThat(switched.statusCode()).isEqualTo(200);
+      String courier = tree(switched).path("user").path("id").asString();
+      String migratedId = browser.sessionId();
+      finishOldRead.run();
+
+      assertThat(sessions.findById(migratedId)).isNotNull();
+      assertThat(sessions.findById(oldId)).isNull();
+      assertThat(context(UUID.fromString(courier))).isEqualTo(originalContext);
+      for (int target : new int[] {port, secondPort}) {
+        JsonNode me = tree(browser.request(target, "GET", "/auth/me", null, null));
+        assertThat(me.path("authenticated").asBoolean()).isTrue();
+        assertThat(me.path("user").path("id").asString()).isEqualTo(courier);
+        assertThat(me.path("user").path("role").asString()).isEqualTo("COURIER");
+      }
+
+      String logoutCsrf = browser.csrf(secondPort);
+      Runnable finishReadAfterLogout = deferredReadCommit(sessions, migratedId, false);
+      HttpResponse<String> logout = browser.request(port, "POST", "/auth/logout", "{}", logoutCsrf);
+      assertThat(logout.statusCode()).isEqualTo(204);
+      finishReadAfterLogout.run();
+      assertThat(sessions.findById(migratedId)).isNull();
+      assertThat(sessions.findById(oldId)).isNull();
+      for (int target : new int[] {port, secondPort}) {
+        assertThat(
+                tree(browser.request(target, "GET", "/auth/me", null, null))
+                    .path("authenticated")
+                    .asBoolean())
+            .isFalse();
+      }
+      assertThat(
+              jdbc.sql("SELECT expires_at <= CURRENT_TIMESTAMP FROM demo_contexts WHERE id=:id")
+                  .param("id", originalContext)
+                  .query(Boolean.class)
+                  .single())
+          .isTrue();
+    }
+  }
+
+  private static <S extends Session> Runnable deferredReadCommit(
+      SessionRepository<S> repository, String sessionId, boolean touchBeforeRotation) {
+    S loaded = repository.findById(sessionId);
+    assertThat(loaded).isNotNull();
+    if (touchBeforeRotation) {
+      loaded.setLastAccessedTime(Instant.now());
+    }
+    return () -> {
+      if (!touchBeforeRotation) {
+        loaded.setLastAccessedTime(Instant.now());
+      }
+      repository.save(loaded);
+    };
+  }
+
+  private String sessionPrimary(String sessionId) {
+    return jdbc.sql("SELECT primary_id FROM spring_session WHERE session_id=:id")
+        .param("id", sessionId)
+        .query(String.class)
+        .single();
+  }
+
   private UUID context(UUID user) {
     return jdbc.sql("SELECT context_id FROM users WHERE id=:id")
         .param("id", user)
@@ -371,6 +478,11 @@ class IdentitySessionsIT {
           .map(cookie -> cookie.getName() + "=" + cookie.getValue())
           .findFirst()
           .orElseThrow();
+    }
+
+    String sessionId() {
+      String encoded = cookie().substring("BORA_SESSION=".length()).replace("\"", "");
+      return new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
     }
 
     @Override

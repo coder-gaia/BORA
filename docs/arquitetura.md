@@ -41,6 +41,24 @@ exercitar concorrência e atualizações graduais, mas a VM continua sendo um po
 Consumo de memória, latência, fluidez do mapa e comportamento durante atualizações serão medidos
 com os cenários e as condições de teste registrados na documentação.
 
+## Interface e mapa
+
+A página pública é preparada em HTML estático no build e hidratada por React. A abertura usa
+uma imagem real Positron do OpenFreeMap, com data e metadados geográficos associados. Um
+Canvas 2D desenha os entregadores simulados recebidos por STOMP ou snapshot HTTP antes de
+qualquer exploração. A projeção Mercator acompanha o recorte responsivo da imagem.
+
+**Explorar mapa** carrega MapLibre GL JS 6.15, worker e CSS e abre a navegação interativa na
+região visível. A imagem tem nome com hash e preload no HTML; seus metadados são compilados
+junto da interface. O navegador interpola posições e respeita visibilidade, movimento reduzido
+e pausa visual nos dois modos. Dados de visitantes permanecem sujeitos ao contexto e às
+regras de autorização da API.
+
+A linha do tempo deriva os marcos dos estados e eventos persistidos. Redistribuição reinicia a
+progressão da tentativa, e cancelamento preserva a distinção entre etapa interrompida e etapas
+não realizadas. O [guia de mapa e interface](mapa-e-interface.md) descreve o comportamento,
+acessibilidade e limites das medições.
+
 ## Publicação
 
 O ambiente de produção serve a web compilada pelo Caddy. Somente o proxy publica portas na VM;

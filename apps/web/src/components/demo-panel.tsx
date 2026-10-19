@@ -1,4 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  QueryClient,
+  QueryClientProvider,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useRef, useState, type FormEvent } from 'react';
 import { ArrowLeft, LogOut, Package, RefreshCw, Store, Truck, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -7,6 +13,7 @@ import { CourierWorkspace } from '@/components/courier-workspace';
 import { ConnectionStatus, RealtimeProvider } from '@/components/realtime-provider';
 import { useOrderUpdates, useRealtime } from '@/hooks/use-realtime';
 import { newerOrder } from '@/lib/realtime';
+import { OrderProgress } from '@/components/order-progress';
 
 const roles = [
   { value: 'STORE', label: 'Sou loja', icon: Store },
@@ -21,15 +28,6 @@ const statusLabels: Record<string, string> = {
   PICKED_UP: 'A caminho do cliente',
   DELIVERED: 'Entregue',
   CANCELED: 'Cancelado',
-};
-const eventLabels: Record<string, string> = {
-  OFFER_CREATED: 'Oferta enviada ao entregador',
-  OFFER_ACCEPTED: 'Oferta aceita',
-  OFFER_REJECTED: 'Oferta recusada',
-  OFFER_EXPIRED: 'Prazo da oferta encerrado',
-  OFFER_CANCELED: 'Oferta cancelada',
-  ORDER_SEARCH_DELAYED: 'Busca por entregador está demorando',
-  ORDER_REASSIGNED: 'Pedido redistribuído',
 };
 
 function active(status: string | undefined) {
@@ -53,7 +51,19 @@ function ErrorMessage({ error }: { error: Error | null }) {
   ) : null;
 }
 
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
+});
+
 export function DemoPanel() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <DemoWorkspace />
+    </QueryClientProvider>
+  );
+}
+
+function DemoWorkspace() {
   const queryClient = useQueryClient();
   const session = useQuery({
     queryKey: ['session'],
@@ -439,15 +449,7 @@ function OrderDetail({
               </div>
             )}
           </dl>
-          <h4>Linha do tempo</h4>
-          <ol className="order-timeline">
-            {item.timeline?.map((event) => (
-              <li key={event.id}>
-                <span>{eventLabels[event.type] ?? statusLabel(event.toStatus)}</span>
-                <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
-              </li>
-            ))}
-          </ol>
+          <OrderProgress key={item.id} order={item} />
           <div className="role-options">
             {canCancel && (
               <Button variant="outline" disabled={busy} onClick={() => cancel.mutate()}>

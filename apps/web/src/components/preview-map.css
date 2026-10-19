@@ -1,0 +1,108 @@
+.public-map-stage {
+  position: relative;
+  min-height: 420px;
+}
+.public-map-stage > .public-map,
+.interactive-map-layer > .public-map {
+  height: 100%;
+}
+.interactive-map-layer {
+  position: absolute;
+  inset: 0;
+}
+.interactive-map-layer.is-loading {
+  opacity: 0;
+  pointer-events: none;
+}
+.preview-basemap {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+.preview-explore {
+  position: absolute;
+  top: 82px;
+  left: 20px;
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+.preview-explore button {
+  border: 0;
+  border-radius: 6px;
+  background: #252525;
+  color: white;
+  padding: 11px 14px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  min-height: 40px;
+}
+.preview-explore button:disabled {
+  cursor: wait;
+}
+.preview-explore button:focus-visible {
+  outline: 3px solid #8a6400;
+  outline-offset: 3px;
+}
+.preview-explore > span {
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 4px;
+  padding: 4px 7px;
+  color: #444;
+  font-size: 11px;
+}
+.preview-attribution {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  padding: 4px 8px;
+  font: 10px/1.5 sans-serif;
+  background: rgba(255, 255, 255, 0.96);
+  color: #222;
+}
+.preview-attribution a {
+  color: inherit;
+  text-decoration: underline;
+}
+.preview-map .public-map-summary {
+  bottom: 38px;
+}
+.preview-map-notice {
+  position: absolute;
+  top: 48%;
+  left: 16px;
+  right: 16px;
+  margin: 0;
+  padding: 12px;
+  background: #fff;
+  color: #333;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.public-map-back {
+  position: absolute;
+  top: 76px;
+  left: 20px;
+}
+@media (max-width: 600px) {
+  .public-map-stage {
+    min-height: 380px;
+  }
+  .preview-explore {
+    left: 14px;
+    top: 72px;
+  }
+  .preview-map .public-map-summary {
+    bottom: 33px;
+    padding: 10px;
+  }
+  .public-map-back {
+    left: 14px;
+    top: 72px;
+  }
+}

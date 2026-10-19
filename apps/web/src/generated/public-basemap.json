@@ -1,0 +1,26 @@
+{
+  "width": 640,
+  "height": 480,
+  "center": [-46.645, -23.556],
+  "zoom": 12.4,
+  "bearing": 0,
+  "pitch": 0,
+  "bounds": {
+    "west": -46.686630398858995,
+    "south": -23.584617882790155,
+    "east": -46.60336960113793,
+    "north": -23.52737588404564
+  },
+  "styleUrl": "https://tiles.openfreemap.org/styles/positron",
+  "capturedAt": "2026-10-19T15:04:05.896Z",
+  "attributions": ["OpenFreeMap", "OpenMapTiles", "OpenStreetMap contributors"],
+  "note": "Basemap only. Courier positions are never baked into this image.",
+  "rasterFormat": "webp",
+  "rasterWidth": 1280,
+  "rasterHeight": 960,
+  "errors": [],
+  "rasterSha256": "4e2354958a9a93c108c90ab79bbe8bd6735928727818b4109d74cd1c8b3f570f",
+  "pixelRatio": 2,
+  "backgroundColor": "#f0f1ed",
+  "assetUrl": "/assets/saopaulo-basemap-4e2354958a9a93c108c90ab79bbe8bd6735928727818b4109d74cd1c8b3f570f.webp"
+}

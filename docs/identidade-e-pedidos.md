@@ -18,6 +18,10 @@ Trocar de papel na mesma sessão preserva o contexto da demonstração. A sessã
 rotacionados; o cliente consulta `/auth/csrf` novamente após a entrada. O cookie `BORA_SESSION`
 é HttpOnly, SameSite=Lax e Secure em produção. No HTTP local, `BORA_SESSION_SECURE=false`.
 
+A entrada invalida a sessão anterior e migra seus atributos para uma nova linha no PostgreSQL.
+Assim, uma consulta do mapa iniciada antes da entrada pode terminar depois dela sem restaurar
+o identificador antigo ou desfazer a troca de papel. O contexto da demonstração permanece o mesmo.
+
 `POST /auth/logout` encerra a sessão e revoga seu contexto. Contas e sessões expiram após duas
 horas de inatividade. Sessões ficam no PostgreSQL e funcionam nas duas instâncias da API.
 Não compartilhar o cookie ou o token CSRF em relatórios de erro.

@@ -108,10 +108,13 @@ test('recebe mudanças pelo WebSocket e recupera o snapshot após perder a rede'
 });
 
 test('troca de papel e encerra sockets e dados privados ao sair', async ({ page }) => {
-  const sockets: { closed: boolean }[] = [];
+  const sockets: { closed: boolean; private: boolean }[] = [];
   page.on('websocket', (socket) => {
     if (new URL(socket.url()).pathname !== '/ws') return;
-    const observed = { closed: false };
+    const observed = { closed: false, private: false };
+    socket.on('framesent', ({ payload }) => {
+      if (String(payload).includes('destination:/user/queue/events')) observed.private = true;
+    });
     sockets.push(observed);
     socket.on('close', () => {
       observed.closed = true;
@@ -123,7 +126,8 @@ test('troca de papel e encerra sockets e dados privados ao sair', async ({ page 
   const order = await createOutsideInterface(page);
   await openOrder(page, order.id);
   await expect(page.locator('.confirmation-code')).toHaveText(order.confirmationCode!);
-  const oldSockets = [...sockets];
+  const oldSockets = sockets.filter((socket) => socket.private);
+  expect(oldSockets.length).toBeGreaterThan(0);
   await chooseRole(page, 'Operação');
   await expect(page.locator('.connection-status')).toHaveAttribute('data-connection', 'connected');
   await expect.poll(() => oldSockets.every((socket) => socket.closed)).toBe(true);
@@ -138,7 +142,9 @@ test('troca de papel e encerra sockets e dados privados ao sair', async ({ page 
   await page.getByRole('button', { name: 'Sair', exact: true }).click();
   await expect(page.locator('.connection-status')).toHaveCount(0);
   await expect(page.locator('.order-list-button')).toHaveCount(0);
-  await expect.poll(() => sockets.every((socket) => socket.closed)).toBe(true);
+  await expect
+    .poll(() => sockets.filter((socket) => socket.private).every((socket) => socket.closed))
+    .toBe(true);
   await page.reload();
   await expect(page.locator('.order-list-button')).toHaveCount(0);
   await expect(page.locator('.confirmation-code')).toHaveCount(0);

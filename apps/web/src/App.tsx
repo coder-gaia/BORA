@@ -1,209 +1,127 @@
-import {
-  ArrowUpRight,
-  Check,
-  CircleDashed,
-  Database,
-  MapPin,
-  RefreshCw,
-  Server,
-  Zap,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useServiceHealth } from '@/hooks/use-service-health';
-import { cn } from '@/lib/utils';
-import { DemoPanel } from '@/components/demo-panel';
+import { lazy, Suspense } from 'react';
+import { ArrowDown, ArrowUpRight, MapPin } from 'lucide-react';
+import { PublicMap } from '@/components/public-map';
 import { SimulationNotice } from '@/components/simulation-notice';
+import './home.css';
 
-const healthMessages = {
-  loading: {
-    title: 'Verificando os serviços',
-    description: 'Só um instante. Estamos conferindo a conexão.',
-  },
-  ready: {
-    title: 'Tudo pronto por aqui',
-    description: 'A aplicação e o banco de dados estão disponíveis.',
-  },
-  degraded: {
-    title: 'Um serviço precisa de atenção',
-    description: 'A aplicação respondeu, mas ainda não está pronta para uso.',
-  },
-  unavailable: {
-    title: 'Não foi possível conectar',
-    description: 'Os serviços podem estar iniciando. Tente verificar novamente.',
-  },
-};
+const DemoPanel = lazy(() =>
+  import('@/components/demo-panel').then((module) => ({ default: module.DemoPanel })),
+);
 
 export function App() {
-  const { health, refresh } = useServiceHealth();
-  const message = healthMessages[health.kind];
-  const isLoading = health.kind === 'loading';
-  const apiAvailable = health.kind === 'loading' ? null : health.kind !== 'unavailable';
-  const databaseAvailable = health.kind === 'loading' ? null : health.databaseAvailable;
-
   return (
-    <div className="page-shell">
+    <div className="home-shell">
       <a className="skip-link" href="#main-content">
         Pular para o conteúdo
       </a>
-
-      <header className="site-header">
-        <a className="brand" href="/" aria-label="Bora, início">
-          <span className="brand-symbol" aria-hidden="true">
-            <Zap size={22} strokeWidth={2.25} />
-          </span>
-          bora<span className="brand-period">.</span>
+      <header className="home-header">
+        <a className="home-brand" href="/" aria-label="Bora, início">
+          <svg viewBox="0 0 32 32" width="32" height="32" aria-hidden="true">
+            <path
+              d="M5 25V7h10a7 7 0 0 1 0 14H9m6-7h12m-5-5 5 5-5 5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          bora<span aria-hidden="true">.</span>
         </a>
-        <span className="construction-label">
-          <span className="construction-dot" aria-hidden="true" />
-          Em construção
-        </span>
+        <nav aria-label="Navegação principal">
+          <a href="#como-funciona">
+            Como funciona <ArrowUpRight size={14} aria-hidden="true" />
+          </a>
+          <a className="home-header-cta" href="#demonstracao">
+            Experimentar
+          </a>
+        </nav>
       </header>
 
-      <main id="main-content" className="main-content" tabIndex={-1}>
-        <div className="intro-grid">
-          <section className="intro" aria-labelledby="intro-title">
-            <p className="eyebrow">
-              <MapPin size={15} aria-hidden="true" />
-              São Paulo, em movimento
+      <main id="main-content" tabIndex={-1}>
+        <section className="home-hero" aria-labelledby="home-title">
+          <div className="home-intro">
+            <p className="home-location">
+              <MapPin size={15} aria-hidden="true" /> São Paulo, em movimento
             </p>
-            <h1 id="intro-title">Cada entrega começa com um bora.</h1>
-            <p className="intro-description">
-              Lojas, entregadores e pessoas conectados em tempo real. Estamos preparando o caminho
-              para a próxima entrega.
+            <h1 id="home-title">
+              Cada entrega
+              <br />
+              começa com um bora.
+            </h1>
+            <p>
+              Uma loja precisa enviar. Um entregador está por perto. Acompanhe o encontro em tempo
+              real.
             </p>
-            <p className="intro-note">A primeira parada é uma base funcionando bem.</p>
-            <div className="intro-rule" aria-hidden="true">
-              <span />
-              <ArrowUpRight size={20} />
-            </div>
-          </section>
+            <a className="home-text-link" href="#demonstracao">
+              Faça parte do caminho <ArrowDown size={16} aria-hidden="true" />
+            </a>
+          </div>
+          <PublicMap />
+        </section>
 
-          <section className="health-panel" aria-labelledby="health-title">
-            <div className="panel-heading">
-              <span className="section-label">Status dos serviços</span>
-              <span className="panel-mark" aria-hidden="true">
-                01
-              </span>
-            </div>
+        <section className="home-how" id="como-funciona" aria-labelledby="how-title">
+          <div>
+            <p className="home-kicker">Do pedido à entrega</p>
+            <h2 id="how-title">
+              A cidade segue.
+              <br />
+              Sua entrega também.
+            </h2>
+          </div>
+          <ol>
+            <li>
+              <span aria-hidden="true">01</span>
+              <div>
+                <h3>A loja chama</h3>
+                <p>Um destino, um pedido. A busca por um entregador começa.</p>
+              </div>
+            </li>
+            <li>
+              <span aria-hidden="true">02</span>
+              <div>
+                <h3>O entregador aceita</h3>
+                <p>A oferta chega a quem consegue buscar mais rápido.</p>
+              </div>
+            </li>
+            <li>
+              <span aria-hidden="true">03</span>
+              <div>
+                <h3>Você acompanha</h3>
+                <p>Da coleta à chegada, cada etapa tem seu lugar no caminho.</p>
+              </div>
+            </li>
+          </ol>
+        </section>
 
-            <div role="status" aria-live="polite" aria-atomic="true">
-              <span
-                className={cn(
-                  'health-symbol',
-                  health.kind === 'ready' && 'health-symbol-ready',
-                  (health.kind === 'degraded' || health.kind === 'unavailable') &&
-                    'health-symbol-error',
-                )}
-                aria-hidden="true"
-              >
-                {health.kind === 'ready' ? (
-                  <Check size={22} />
-                ) : (
-                  <CircleDashed
-                    size={22}
-                    className={isLoading ? 'motion-safe:animate-spin' : undefined}
-                  />
-                )}
-              </span>
-              <h2 id="health-title">{message.title}</h2>
-              <p className="health-description">{message.description}</p>
-            </div>
-
-            <dl className="service-list" aria-busy={isLoading}>
-              <ServiceRow
-                label="Aplicação"
-                icon={<Server size={17} aria-hidden="true" />}
-                available={apiAvailable}
-                loading={isLoading}
-              />
-              <ServiceRow
-                label="Banco de dados"
-                icon={<Database size={17} aria-hidden="true" />}
-                available={databaseAvailable}
-                loading={isLoading}
-              />
-            </dl>
-
-            <Button className="w-full" type="button" disabled={isLoading} onClick={refresh}>
-              <RefreshCw
-                className={isLoading ? 'motion-safe:animate-spin' : undefined}
-                aria-hidden="true"
-              />
-              {isLoading ? 'Verificando...' : 'Verificar novamente'}
-            </Button>
-
-            <p className="last-check">
-              {health.kind === 'loading' ? (
-                'Consulta em andamento'
-              ) : (
-                <>
-                  Última verificação às{' '}
-                  <time dateTime={health.checkedAt.toISOString()}>
-                    {health.checkedAt.toLocaleTimeString('pt-BR')}
-                  </time>
-                </>
-              )}
-            </p>
-          </section>
+        <div className="home-demo" id="demonstracao">
+          <Suspense
+            fallback={
+              <section className="demo-panel" aria-busy="true">
+                <h2>Experimente um pedido</h2>
+                <p role="status">Preparando a demonstração...</p>
+              </section>
+            }
+          >
+            <DemoPanel />
+          </Suspense>
         </div>
-
-        <DemoPanel />
-
-        <aside className="project-note" aria-label="Sobre a demonstração">
-          <span className="note-number" aria-hidden="true">
-            Em desenvolvimento
-          </span>
-          <p>
-            Comece pela demonstração de pedidos.
-            <span> Crie uma entrega como loja ou receba ofertas como entregador.</span>
-          </p>
-        </aside>
       </main>
 
-      <footer className="site-footer">
-        <p>Bora. Entregas em movimento.</p>
+      <footer className="home-footer">
+        <div>
+          <strong>bora.</strong>
+          <span>Entregas em movimento.</span>
+        </div>
+        <p className="home-map-credits">
+          <a href="https://openfreemap.org/">OpenFreeMap</a>
+          <span aria-hidden="true">/</span>
+          <a href="https://openmaptiles.org/">OpenMapTiles</a>
+          <span aria-hidden="true">/</span>
+          <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a>
+        </p>
         <SimulationNotice />
       </footer>
-    </div>
-  );
-}
-
-function ServiceRow({
-  label,
-  icon,
-  available,
-  loading,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  available: boolean | null;
-  loading: boolean;
-}) {
-  const status = loading
-    ? 'Verificando'
-    : available === null
-      ? 'Não verificado'
-      : available
-        ? 'Disponível'
-        : 'Indisponível';
-
-  return (
-    <div className="service-row">
-      <dt>
-        {icon}
-        {label}
-      </dt>
-      <dd>
-        <span
-          className={cn(
-            'service-dot',
-            available === true && 'service-dot-ready',
-            available === false && 'service-dot-error',
-          )}
-          aria-hidden="true"
-        />
-        {status}
-      </dd>
     </div>
   );
 }

@@ -20,9 +20,9 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
-import org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.CompositeSessionAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
+import org.springframework.security.web.authentication.session.SessionFixationProtectionStrategy;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.csrf.CsrfAuthenticationStrategy;
 import org.springframework.security.web.csrf.CsrfLogoutHandler;
@@ -65,7 +65,8 @@ class DemoAuthController {
     this.sessionAuthentication =
         new CompositeSessionAuthenticationStrategy(
             List.of(
-                new ChangeSessionIdAuthenticationStrategy(),
+                // Uma nova linha impede que leituras antigas restaurem o ID anterior da sessão.
+                new SessionFixationProtectionStrategy(),
                 new CsrfAuthenticationStrategy(csrfTokens)));
   }
 

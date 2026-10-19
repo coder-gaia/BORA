@@ -3,8 +3,16 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CourierOffer } from '@/components/courier-offer';
-import { api, type CourierWorkView, type DemoUserView, type PositionReceipt } from '@/lib/api';
+import {
+  api,
+  type CourierWorkView,
+  type DemoUserView,
+  type PositionReceipt,
+  type OrderView,
+} from '@/lib/api';
 import { useOrderUpdates, useRealtime } from '@/hooks/use-realtime';
+import { newerOrder } from '@/lib/realtime';
+import { OrderProgress } from '@/components/order-progress';
 
 const courierStatuses: Record<string, string> = {
   OFFLINE: 'Offline',
@@ -45,6 +53,7 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
   const [receipt, setReceipt] = useState<(PositionReceipt & { observedAt: number }) | null>(null);
   const [receiptClock, setReceiptClock] = useState(0);
   const [notice, setNotice] = useState('');
+  const [completedOrderId, setCompletedOrderId] = useState<string | null>(null);
   const work = useQuery({
     queryKey: ['courier-work', user.id],
     queryFn: ({ signal }) => api.courierWork(signal),
@@ -61,7 +70,22 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
   });
   const courier = work.data?.courier;
   const order = work.data?.order;
-  useOrderUpdates(order?.id);
+  const timelineOrderId = order?.id ?? completedOrderId;
+  useOrderUpdates(timelineOrderId);
+  const timeline = useQuery({
+    queryKey: ['order', user.id, timelineOrderId],
+    async queryFn({ signal }) {
+      const incoming = await api.order(timelineOrderId!, signal);
+      const current = queryClient.getQueryData<OrderView>(['order', user.id, timelineOrderId]);
+      return newerOrder(incoming, current) ? incoming : current!;
+    },
+    enabled: Boolean(timelineOrderId),
+    refetchInterval: (query) =>
+      !connected && query.state.data && !['DELIVERED', 'CANCELED'].includes(query.state.data.status)
+        ? 2_000
+        : false,
+    refetchIntervalInBackground: false,
+  });
   const latitude = inputLatitude ?? String(courier?.location?.latitude ?? -23.5614);
   const longitude = inputLongitude ?? String(courier?.location?.longitude ?? -46.6559);
   const route = useQuery({
@@ -74,6 +98,7 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['courier-work'] }),
       queryClient.invalidateQueries({ queryKey: ['courier-offer'] }),
+      queryClient.invalidateQueries({ queryKey: ['order', user.id] }),
     ]);
     const current = queryClient.getQueryData<CourierWorkView>(['courier-work', user.id]);
     if (current?.order) {
@@ -131,7 +156,8 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
   });
   const delivery = useMutation({
     mutationFn: () => api.deliverOrder(order!.id, order!.version, confirmationCode || undefined),
-    onSuccess() {
+    onSuccess(value) {
+      setCompletedOrderId(value.id);
       setConfirmationCode('');
       setNotice('Entrega concluída. Você está disponível novamente.');
       void refresh();
@@ -370,6 +396,13 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
               </Button>
             </form>
           )}
+          {timeline.data && <OrderProgress key={timeline.data.id} order={timeline.data} />}
+        </section>
+      )}
+      {!order && completedOrderId && timeline.data?.status === 'DELIVERED' && (
+        <section className="order-detail" aria-labelledby="last-delivery-title">
+          <h3 id="last-delivery-title">Última entrega</h3>
+          <OrderProgress key={timeline.data.id} order={timeline.data} />
         </section>
       )}
     </div>

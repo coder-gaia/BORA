@@ -19,6 +19,9 @@ com prazo para aceitar, recusa e redistribuição pela operação. Consulte o
 As mudanças chegam por [WebSocket](docs/tempo-real.md), com recuperação após desconexão.
 O [simulador](docs/simulacao.md) mantém 120 entregadores e 40 lojas fictícias em atividade,
 usando as mesmas ações HTTP de disponibilidade, oferta, coleta e entrega.
+A página inicial mostra uma prévia ao vivo de São Paulo com entregadores em movimento.
+**Explorar mapa** habilita mover e ajustar o zoom. O [guia de mapa e interface](docs/mapa-e-interface.md)
+descreve a base real, a conexão, os controles e a linha do tempo dos pedidos.
 
 ## Executar localmente
 

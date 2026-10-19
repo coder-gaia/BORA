@@ -2,6 +2,7 @@ package dev.bora.orders.internal;
 
 import dev.bora.identity.CurrentUser;
 import dev.bora.orders.OrderPage;
+import dev.bora.orders.OrderSnapshots;
 import dev.bora.orders.OrderView;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -25,10 +26,12 @@ import org.springframework.web.bind.annotation.RestController;
 class OrdersController {
   private final CurrentUser currentUser;
   private final OrdersService orders;
+  private final OrderSnapshots snapshots;
 
-  OrdersController(CurrentUser currentUser, OrdersService orders) {
+  OrdersController(CurrentUser currentUser, OrdersService orders, OrderSnapshots snapshots) {
     this.currentUser = currentUser;
     this.orders = orders;
+    this.snapshots = snapshots;
   }
 
   @PostMapping
@@ -65,7 +68,7 @@ class OrdersController {
   @GetMapping("/{id}")
   @Operation(operationId = "getOrder", summary = "Consultar um pedido e sua linha do tempo")
   OrderView detail(@PathVariable UUID id) {
-    return orders.detail(currentUser.require(), id);
+    return snapshots.snapshot(currentUser.require(), id);
   }
 
   @PostMapping("/{id}/cancel")

@@ -6,6 +6,7 @@ import { chooseRole } from './demo';
 
 const execute = promisify(execFile);
 const root = fileURLToPath(new URL('../../../', import.meta.url));
+const project = process.env.BORA_CLUSTER_PROJECT || 'bora-cluster';
 const compose = [
   'compose',
   '--env-file',
@@ -13,7 +14,7 @@ const compose = [
   '-f',
   `${root}infra/compose/compose.cluster.yml`,
   '-p',
-  'bora-cluster',
+  project,
 ];
 
 async function service(command: 'start' | 'stop', name: 'api1' | 'api2') {
@@ -51,8 +52,10 @@ test('reconecta nas duas instâncias sem perder sessão ou snapshot', async ({
 }, testInfo) => {
   test.skip(process.env.BORA_TEST_CLUSTER !== 'true', 'Ensaio explícito do cluster Docker local.');
   test.setTimeout(180_000);
+  // Validate before the first stop and before entering cleanup that restarts services.
+  expect(['bora-cluster', 'bora-sim-soak']).toContain(project);
   expect(['localhost', '127.0.0.1']).toContain(new URL(baseURL!).hostname);
-  const sockets: { closed: boolean; connected: boolean }[] = [];
+  const sockets: { closed: boolean; connected: boolean; private: boolean }[] = [];
   const errors: string[] = [];
   const failedResponses: { path: string; status: number }[] = [];
   let snapshots = 0;
@@ -65,7 +68,10 @@ test('reconecta nas duas instâncias sem perder sessão ou snapshot', async ({
   });
   page.on('websocket', (socket) => {
     if (new URL(socket.url()).pathname !== '/ws') return;
-    const state = { closed: false, connected: false };
+    const state = { closed: false, connected: false, private: false };
+    socket.on('framesent', ({ payload }) => {
+      if (String(payload).includes('destination:/user/queue/events')) state.private = true;
+    });
     sockets.push(state);
     socket.on('close', () => {
       state.closed = true;
@@ -94,14 +100,16 @@ test('reconecta nas duas instâncias sem perder sessão ou snapshot', async ({
     await service('start', 'api2');
     await ready(request, 'api2');
     for (const stopped of ['api1', 'api2'] as const) {
-      const previous = sockets.filter((socket) => !socket.closed && socket.connected).at(-1);
+      const previous = sockets
+        .filter((socket) => socket.private && !socket.closed && socket.connected)
+        .at(-1);
       expect(previous).toBeDefined();
       const snapshotCount = snapshots;
-      const connectedCount = sockets.filter((socket) => socket.connected).length;
+      const connectedCount = sockets.filter((socket) => socket.private && socket.connected).length;
       await service('stop', stopped);
       await expect.poll(() => previous!.closed, { timeout: 15_000 }).toBe(true);
       await expect
-        .poll(() => sockets.filter((socket) => socket.connected).length, {
+        .poll(() => sockets.filter((socket) => socket.private && socket.connected).length, {
           timeout: 20_000,
         })
         .toBeGreaterThan(connectedCount);
@@ -118,7 +126,7 @@ test('reconecta nas duas instâncias sem perder sessão ou snapshot', async ({
       recoveries.push({
         stopped,
         snapshots,
-        connections: sockets.filter((socket) => socket.connected).length,
+        connections: sockets.filter((socket) => socket.private && socket.connected).length,
       });
       await service('start', stopped);
       await ready(request, stopped);
@@ -131,7 +139,8 @@ test('reconecta nas duas instâncias sem perder sessão ou snapshot', async ({
     });
   } finally {
     // Nunca deixar a segunda instância parada se uma asserção falhar.
-    await execute('docker', [...compose, 'up', '--no-build', '--no-deps', '-d', 'api1', 'api2'], {
+    // Start existing containers so additional Compose overrides stay intact.
+    await execute('docker', [...compose, 'start', 'api1', 'api2'], {
       cwd: root,
       timeout: 60_000,
     });

@@ -106,6 +106,37 @@ O diretório `/opt/bora/config` usa `0755` e contém somente a configuração p�
 e os marcadores públicos de tráfego e despacho, em arquivos `0644`. Isso permite que o container sem capabilities leia o bind mount, mesmo
 com um UID diferente do usuário de deploy. Credenciais e arquivos de estado ficam fora dele.
 
+## Mapa, CSP e arquivos carregados depois da página
+
+A prévia inicial serve uma base cartográfica real pela própria origem, com dimensões,
+prioridade alta e preload no HTML. O raster fica em `/assets/` com hash no nome; os metadados
+compilados na interface apontam para essa versão da imagem. Publicar ou restaurar a base junto
+do bundle que contém seus limites geográficos evita desalinhamento de pontos após atualizações.
+
+**Explorar mapa** carrega estilo, tiles e recursos de `https://tiles.openfreemap.org`. O
+`Content-Security-Policy` de `infra/caddy/Caddyfile` permite somente esse host externo em
+`connect-src` e `img-src`, além das origens e tipos já previstos para a aplicação. O worker do
+MapLibre e as fontes WOFF2 da interface são servidos pela própria origem. A política é enviada
+também na resposta do arquivo do worker, pois ele faz requisições de recursos do mapa.
+
+Manter `script-src 'self'` e a configuração explícita do worker antes de criar o mapa. O CSS
+inicial é incorporado ao HTML público pelo build e usa a permissão de estilo inline já presente
+na política. Os glifos do mapa pertencem ao estilo externo e são distintos das fontes WOFF2 da
+interface. A base externa pode ficar indisponível sem impedir o uso da demonstração de pedidos.
+
+O exportador deve preparar todos os arquivos de `dist/assets`, incluindo a imagem da prévia,
+chunks dinâmicos, worker, CSS e fontes, antes de ativar o HTML. Preservar os assets com hash de versões anteriores
+permite atender abas que só carreguem um módulo depois da atualização. A rota `/assets/*`
+precisa continuar servindo arquivos reais, com tipo MIME correto; um asset ausente deve retornar
+404, sem receber o HTML de fallback da aplicação.
+
+Conferir o mapa em uma origem com os headers reais de produção e observar violações de CSP no
+console. O ambiente Vite e o Caddy do cluster local não aplicam essa política, portanto um teste
+funcional somente nesses ambientes não comprova a configuração de produção. Alterar a CSP muda
+o Caddyfile e segue o caminho de reload já descrito neste guia.
+
+Consulte [mapa e interface](mapa-e-interface.md) para comportamento, controles e medições.
+
 ## Configurar o GitHub
 
 O workflow de publicação usa imagens no GHCR com a tag do SHA Git completo. Configurar no

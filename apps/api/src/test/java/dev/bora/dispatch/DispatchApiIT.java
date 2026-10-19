@@ -133,6 +133,116 @@ class DispatchApiIT {
   }
 
   @Test
+  void exposesPublicHttpDetailsOnlyToTheCurrentlyAssignedCourier() throws Exception {
+    Browser actor = new Browser();
+    actor.login("COURIER");
+    UUID firstCourier = actor.courierId;
+    UUID order = order(null, true, 10);
+    String path = "/api/v1/orders/" + order;
+    assertThat(actor.get(path).statusCode()).isEqualTo(404);
+
+    Browser outsider = new Browser();
+    outsider.login("COURIER");
+    online(firstCourier, NEAR);
+    assertThat(dispatch.dispatchAvailableOrders()).isEqualTo(1);
+    assertThat(actor.post("/api/v1/offers/" + offer(order) + "/accept", "").statusCode())
+        .isEqualTo(204);
+    var response = actor.get(path);
+    assertThat(response.statusCode()).isEqualTo(200);
+    JsonNode detail = json(response);
+    assertThat(detail.path("id").asString()).isEqualTo(order.toString());
+    assertThat(detail.path("courierId").asString()).isEqualTo(firstCourier.toString());
+    assertThat(detail.path("status").asString()).isEqualTo("ASSIGNED");
+    assertThat(detail.path("version").asLong()).isEqualTo(1);
+    assertThat(detail.path("confirmationCode").isNull()).isTrue();
+    assertThat(detail.path("timeline").toString()).contains("ORDER_ASSIGNED");
+    assertThat(response.body()).doesNotContain("confirmationCodeHash");
+    assertThat(outsider.get(path).statusCode()).isEqualTo(404);
+    assertThat(actor.get("/api/v1/orders").statusCode()).isEqualTo(403);
+    assertThat(actor.post(path + "/cancel", "{\"expectedVersion\":1}").statusCode()).isEqualTo(403);
+
+    actor.login("OPERATIONS");
+    assertThat(
+            actor
+                .post("/api/v1/ops/orders/" + order + "/reassign", "{\"expectedVersion\":1}")
+                .statusCode())
+        .isEqualTo(204);
+    actor.login("COURIER");
+    assertThat(actor.courierId).isEqualTo(firstCourier);
+    assertThat(actor.get(path).statusCode()).isEqualTo(404);
+
+    online(outsider.courierId, NEAR);
+    assertThat(dispatch.dispatchAvailableOrders()).isEqualTo(1);
+    assertThat(outsider.post("/api/v1/offers/" + offer(order) + "/accept", "").statusCode())
+        .isEqualTo(204);
+    var reassigned = outsider.get(path);
+    assertThat(reassigned.statusCode()).isEqualTo(200);
+    assertThat(json(reassigned).path("courierId").asString())
+        .isEqualTo(outsider.courierId.toString());
+    assertThat(json(reassigned).path("confirmationCode").isNull()).isTrue();
+    assertThat(actor.get(path).statusCode()).isEqualTo(404);
+  }
+
+  @Test
+  void keepsPrivateConfirmationWithTheStoreAndRevokesCourierHttpAccessAfterReassign()
+      throws Exception {
+    Browser owner = new Browser();
+    owner.login("STORE");
+    var created =
+        owner.post(
+            "/api/v1/orders",
+            "{\"dropoff\":{\"latitude\":-23.559,\"longitude\":-46.650}}",
+            "private-courier-detail");
+    assertThat(created.statusCode()).isEqualTo(201);
+    JsonNode original = json(created);
+    UUID order = UUID.fromString(original.path("id").asString());
+    String path = "/api/v1/orders/" + order;
+    String code = original.path("confirmationCode").asString();
+    assertThat(code).matches("[0-9]{6}");
+    var storeDetail = owner.get(path);
+    assertThat(storeDetail.statusCode()).isEqualTo(200);
+    assertThat(json(storeDetail).path("confirmationCode").asString()).isEqualTo(code);
+
+    Browser outsider = new Browser();
+    outsider.login("COURIER");
+    var hidden = outsider.get(path);
+    var missing = outsider.get("/api/v1/orders/" + UUID.randomUUID());
+    assertThat(hidden.statusCode()).isEqualTo(404);
+    assertThat(missing.statusCode()).isEqualTo(404);
+    assertThat(json(hidden).path("code").asString()).isEqualTo("ORDER_NOT_FOUND");
+    assertThat(json(missing).path("code").asString()).isEqualTo("ORDER_NOT_FOUND");
+
+    owner.login("COURIER");
+    online(owner.courierId, NEAR);
+    assertThat(owner.get(path).statusCode()).isEqualTo(404);
+    assertThat(dispatch.dispatchAvailableOrders()).isEqualTo(1);
+    assertThat(owner.post("/api/v1/offers/" + offer(order) + "/accept", "").statusCode())
+        .isEqualTo(204);
+    var courierDetail = owner.get(path);
+    assertThat(courierDetail.statusCode()).isEqualTo(200);
+    assertThat(json(courierDetail).path("confirmationCode").isNull()).isTrue();
+    assertThat(courierDetail.body()).doesNotContain("\"" + code + "\"", "confirmationCodeHash");
+    assertThat(outsider.get(path).statusCode()).isEqualTo(404);
+
+    owner.login("OPERATIONS");
+    var operationsDetail = owner.get(path);
+    assertThat(operationsDetail.statusCode()).isEqualTo(200);
+    assertThat(json(operationsDetail).path("confirmationCode").isNull()).isTrue();
+    assertThat(
+            owner
+                .post("/api/v1/ops/orders/" + order + "/reassign", "{\"expectedVersion\":1}")
+                .statusCode())
+        .isEqualTo(204);
+    owner.login("COURIER");
+    assertThat(owner.get(path).statusCode()).isEqualTo(404);
+    owner.login("STORE");
+    var afterReassign = owner.get(path);
+    assertThat(afterReassign.statusCode()).isEqualTo(200);
+    assertThat(json(afterReassign).path("confirmationCode").asString()).isEqualTo(code);
+    assertThat(json(afterReassign).path("status").asString()).isEqualTo("SEARCHING");
+  }
+
+  @Test
   void comparesExactRouteDurationsBeforeRoundingThePublicEta() {
     UUID order = order(null, true, 10);
     UUID slower = simulatedCourier(NEAR), faster = simulatedCourier(FAR);
@@ -679,11 +789,16 @@ class DispatchApiIT {
     }
 
     HttpResponse<String> post(String path, String body) throws Exception {
+      return post(path, body, null);
+    }
+
+    HttpResponse<String> post(String path, String body, String key) throws Exception {
       var request =
           HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
               .timeout(Duration.ofSeconds(20))
               .header("Content-Type", "application/json");
       if (csrf != null) request.header(csrfHeader, csrf);
+      if (key != null) request.header("Idempotency-Key", key);
       return client.send(
           request.POST(HttpRequest.BodyPublishers.ofString(body)).build(),
           HttpResponse.BodyHandlers.ofString());

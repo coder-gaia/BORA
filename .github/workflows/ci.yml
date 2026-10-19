@@ -49,6 +49,7 @@ jobs:
         run: node scripts/format.mjs
       - run: npm run lint --prefix apps/web
       - run: npm run typecheck --prefix apps/web
+      - run: npm run test:unit --prefix apps/web
       - run: npm run build --prefix apps/web
 
   api:
