@@ -3,10 +3,10 @@
 Despacho de entregas em tempo real em São Paulo, desenvolvido com Java, Spring Boot, React e PostGIS.
 
 Bora é uma demonstração de despacho de entregas: lojas criam pedidos e o sistema busca o
-entregador que chega mais rápido. A base local já executa banco, API e web com uma única
-composição Docker. As funcionalidades de entrega estão em desenvolvimento.
+entregador que chega mais rápido. O ambiente local executa banco, API, simulador e web com uma
+única composição Docker.
 
-A [demonstração pública](https://bora.alexandregaia.me/) apresenta a saúde dos serviços.
+A [demonstração pública](https://bora.alexandregaia.me/) permite experimentar os três papéis.
 O domínio já contém as máquinas de estado, o esquema espacial e 40 lojas fictícias;
 o roteamento usa um recorte real das vias de São Paulo. A entrada de demonstração permite
 trocar de papel, criar pedidos, consultar a linha do tempo e cancelar conforme a etapa.
@@ -16,6 +16,9 @@ Entregadores podem informar disponibilidade e posições em lote; coleta e entre
 coordenadas com o estado do pedido. O despacho oferece pedidos por tempo estimado de chegada,
 com prazo para aceitar, recusa e redistribuição pela operação. Consulte o
 [guia de entregadores e posições](docs/entregadores-e-posicoes.md).
+As mudanças chegam por [WebSocket](docs/tempo-real.md), com recuperação após desconexão.
+O [simulador](docs/simulacao.md) mantém 120 entregadores e 40 lojas fictícias em atividade,
+usando as mesmas ações HTTP de disponibilidade, oferta, coleta e entrega.
 
 ## Executar localmente
 
@@ -30,7 +33,8 @@ docker compose -f infra/compose/compose.dev.yml up --build --wait
 
 Abra [localhost:5173](http://localhost:5173). A página consulta a saúde da API. A readiness
 inclui o banco e o grafo de rotas aquecido. O primeiro build baixa as dependências; o Compose
-prepara o grafo antes de iniciar a API. O recorte de ruas já está no repositório.
+prepara o grafo antes de iniciar a API. O recorte de ruas já está no repositório. O simulador
+começa automaticamente após a API ficar pronta; o rodapé informa a velocidade de simulação.
 
 | Serviço                             | Endereço local                                    |
 | ----------------------------------- | ------------------------------------------------- |
@@ -176,7 +180,7 @@ embutido na API, com o recorte de São Paulo versionado no repositório.
 ```text
 apps/
   api/          API Spring Boot e migrações Flyway
-  simulator/    módulo Java reservado à simulação
+  simulator/    lojas e entregadores simulados por HTTP e threads virtuais
   web/          React, Vite, TypeScript e componentes de interface
 infra/
   compose/      ambientes local e de produção

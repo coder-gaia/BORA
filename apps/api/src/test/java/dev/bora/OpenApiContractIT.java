@@ -75,6 +75,7 @@ class OpenApiContractIT {
               "/api/v1/auth/demo",
               "/api/v1/auth/logout",
               "/api/v1/map/snapshot",
+              "/api/v1/map/config",
               "/api/v1/ops/snapshot",
               "/api/v1/tracking/{code}",
               "/api/v1/stores/me",
@@ -111,6 +112,18 @@ class OpenApiContractIT {
       assertThat(paths.path("/api/v1/auth/me").path("get").path("security").isEmpty()).isTrue();
       assertThat(paths.path("/api/v1/map/snapshot").path("get").path("security").isEmpty())
           .isTrue();
+      assertThat(paths.path("/api/v1/map/config").path("get").path("security").isEmpty()).isTrue();
+      assertThat(paths.path("/api/v1/map/config").path("get").path("operationId").asString())
+          .isEqualTo("getMapConfig");
+      HttpResponse<String> simulation =
+          client.send(
+              HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/v1/map/config"))
+                  .GET()
+                  .build(),
+              HttpResponse.BodyHandlers.ofString());
+      assertThat(simulation.statusCode()).isEqualTo(200);
+      assertThat(mapper.readTree(simulation.body()).path("simulationSpeed").asDouble())
+          .isEqualTo(3);
       assertThat(paths.path("/api/v1/tracking/{code}").path("get").path("security").isEmpty())
           .isTrue();
       assertThat(

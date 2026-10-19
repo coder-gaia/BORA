@@ -3,8 +3,10 @@ package dev.bora.realtime.internal;
 import dev.bora.identity.CurrentUser;
 import dev.bora.realtime.MapFrame;
 import dev.bora.realtime.MapViewport;
+import dev.bora.realtime.SimulationConfig;
 import dev.bora.realtime.TrackingSnapshot;
 import io.swagger.v3.oas.annotations.Operation;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -12,10 +14,21 @@ import org.springframework.web.bind.annotation.*;
 class RealtimeController {
   private final RealtimeReadModel model;
   private final CurrentUser current;
+  private final SimulationConfig simulation;
 
-  RealtimeController(RealtimeReadModel model, CurrentUser current) {
+  RealtimeController(
+      RealtimeReadModel model,
+      CurrentUser current,
+      @Value("${bora.routing.simulation-speed:3}") double simulationSpeed) {
     this.model = model;
     this.current = current;
+    this.simulation = new SimulationConfig(simulationSpeed);
+  }
+
+  @GetMapping("/map/config")
+  @Operation(operationId = "getMapConfig", summary = "Consultar o fator de velocidade da simulação")
+  SimulationConfig config() {
+    return simulation;
   }
 
   @GetMapping("/map/snapshot")

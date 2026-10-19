@@ -9,6 +9,7 @@ import dev.bora.orders.OrderStatus;
 import dev.bora.orders.OrderWorkItem;
 import dev.bora.orders.OrderWorkflow;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -16,7 +17,6 @@ import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -50,27 +50,33 @@ class DeliveryProgress {
     this.transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
   }
 
-  @EventListener
-  public void positionsPersisted(CourierPositionsPersisted event) {
-    if (event.positions().isEmpty()) return;
-    var active =
-        jdbc.sql(
-                """
-        SELECT id,courier_id FROM orders WHERE courier_id IN (:couriers)
-          AND status IN ('ASSIGNED','AT_STORE','PICKED_UP')
+  List<CapturedPositions> capture(CourierPositionsPersisted event) {
+    if (event.positions().isEmpty()) return List.of();
+    return jdbc
+        .sql(
+            """
+        SELECT o.id,o.courier_id,o.assigned_at,c.position_epoch
+        FROM orders o JOIN couriers c ON c.id=o.courier_id
+        WHERE o.courier_id IN (:couriers) AND o.status IN ('ASSIGNED','AT_STORE','PICKED_UP')
         """)
-            .param("couriers", event.positions().keySet())
-            .query(
-                (row, index) ->
-                    new ActiveOrder(
-                        row.getObject("id", UUID.class), row.getObject("courier_id", UUID.class)))
-            .list();
-    for (var order : active) {
-      advance(
-          order.id(),
-          order.courierId(),
-          event.positions().getOrDefault(order.courierId(), List.of()),
-          event.epochs().get(order.courierId()));
+        .param("couriers", event.positions().keySet())
+        .query(
+            (row, index) ->
+                new CapturedPositions(
+                    row.getObject("id", UUID.class),
+                    row.getObject("courier_id", UUID.class),
+                    row.getTimestamp("assigned_at").toInstant(),
+                    row.getLong("position_epoch"),
+                    event.positions().get(row.getObject("courier_id", UUID.class))))
+        .list()
+        .stream()
+        .filter(order -> Long.valueOf(order.epoch()).equals(event.epochs().get(order.courierId())))
+        .toList();
+  }
+
+  void positionsPersisted(List<CapturedPositions> captured) {
+    for (var order : captured) {
+      advance(order.id(), order.courierId(), order.samples(), order.epoch(), order.assignedAt());
     }
   }
 
@@ -95,18 +101,45 @@ class DeliveryProgress {
                     new ActiveOrder(
                         row.getObject("id", UUID.class), row.getObject("courier_id", UUID.class)))
             .list();
-    for (var order : pending) advance(order.id(), order.courierId(), List.of(), null);
+    for (var order : pending) advance(order.id(), order.courierId(), List.of(), null, null);
   }
 
-  private void advance(UUID id, UUID courierId, List<PositionSample> received, Long expectedEpoch) {
+  private void advance(
+      UUID id,
+      UUID courierId,
+      List<PositionSample> received,
+      Long expectedEpoch,
+      Instant capturedAssignment) {
     try {
       transaction.executeWithoutResult(
           status -> {
-            var locked = orders.tryLockForUpdate(id);
+            // Queued samples wait for a concurrent completion instead of losing its history.
+            var locked =
+                capturedAssignment == null
+                    ? orders.tryLockForUpdate(id)
+                    : java.util.Optional.of(orders.lockForUpdate(id));
             if (locked.isEmpty()) return;
             OrderWorkItem order = locked.get();
-            if (!FulfillmentCoordinator.active(order.status())
-                || !courierId.equals(order.courierId())) return;
+            if (!courierId.equals(order.courierId())
+                || (capturedAssignment != null && !capturedAssignment.equals(order.assignedAt())))
+              return;
+            if (capturedAssignment != null
+                && (order.status() == OrderStatus.DELIVERED
+                    || order.status() == OrderStatus.CANCELED)) {
+              var finished =
+                  jdbc.sql("SELECT COALESCE(delivered_at,canceled_at) FROM orders WHERE id=:id")
+                      .param("id", id)
+                      .query(OffsetDateTime.class)
+                      .single()
+                      .toInstant();
+              record(
+                  order,
+                  received.stream()
+                      .filter(point -> !point.recordedAt().isAfter(finished))
+                      .toList());
+              return;
+            }
+            if (!FulfillmentCoordinator.active(order.status())) return;
             CourierView courier = couriers.lock(courierId);
             if (expectedEpoch != null
                 && !expectedEpoch.equals(
@@ -180,4 +213,7 @@ class DeliveryProgress {
   }
 
   private record ActiveOrder(UUID id, UUID courierId) {}
+
+  record CapturedPositions(
+      UUID id, UUID courierId, Instant assignedAt, long epoch, List<PositionSample> samples) {}
 }

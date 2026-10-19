@@ -63,6 +63,7 @@ install -d -m 0755 -o "$deploy_user" -g "$deploy_user" /opt/bora/config
 if [[ ! -e /opt/bora/env.production ]]; then
   password=$(openssl rand -hex 32)
   confirmation_secret=$(openssl rand -hex 32)
+  simulator_secret=$(openssl rand -hex 32)
   umask 077
   cat > /opt/bora/env.production <<EOF
 DOMAIN=bora.alexandregaia.me
@@ -71,12 +72,16 @@ POSTGRES_DB=bora
 POSTGRES_USER=bora
 POSTGRES_PASSWORD=$password
 BORA_CONFIRMATION_SECRET=$confirmation_secret
+BORA_SIMULATOR_KEY=$simulator_secret
 BORA_SESSION_SECURE=true
+SIM_SEED=2026
+SIM_SPEED=3
 API_IMAGE=ghcr.io/coder-gaia/bora-api
 WEB_IMAGE=ghcr.io/coder-gaia/bora-web
 DB_IMAGE=ghcr.io/coder-gaia/bora-postgis
+SIMULATOR_IMAGE=ghcr.io/coder-gaia/bora-simulator
 EOF
-  unset password confirmation_secret
+  unset password confirmation_secret simulator_secret
   chown "$deploy_user:$deploy_user" /opt/bora/env.production
   chmod 0600 /opt/bora/env.production
 fi

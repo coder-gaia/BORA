@@ -26,6 +26,9 @@ web_source=${BORA_TEST_WEB_IMAGE:-bora-web:m01-assets}
 previous_api_source=${BORA_TEST_PREVIOUS_API_IMAGE:-$api_source}
 previous_web_source=${BORA_TEST_PREVIOUS_WEB_IMAGE:-$web_source}
 db_source=${BORA_TEST_DB_IMAGE:-bora-postgis:18.6-3.6.4}
+simulator_source=${BORA_TEST_SIMULATOR_IMAGE:-bora-simulator:dev}
+: "${BORA_TEST_PREVIOUS_COMPOSE:?Forneça o Compose legado real, anterior ao simulador.}"
+[[ -f $BORA_TEST_PREVIOUS_COMPOSE ]]
 probe_pid=
 gate_observer_pid=
 rollback_deadline_pid=
@@ -37,6 +40,16 @@ export BUNDLE_VERSION=$old_version
 export API1_VERSION=$old_version API2_VERSION=$old_version WEB_VERSION=$old_version DB_VERSION=$old_version
 
 cleanup() {
+  local status=$? container
+  if (( status != 0 )); then
+    docker ps --all --filter "label=com.docker.compose.project=$project" \
+      --format '{{.Names}} {{.Status}}' >&2 || true
+    while IFS= read -r container; do
+      [[ -n $container ]] || continue
+      docker logs --tail 80 "$container" >&2 || true
+    done < <(docker ps --all --quiet --filter "label=com.docker.compose.project=$project" \
+      --filter label=com.docker.compose.service=simulator)
+  fi
   touch "$test_root/stop-probe" "$test_root/stop-dispatch-observers"
   for observer_pid in "$gate_observer_pid" "$rollback_deadline_pid"; do
     if [[ -n $observer_pid ]]; then
@@ -64,7 +77,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for image in "$api_source" "$web_source" "$previous_api_source" "$previous_web_source" "$db_source"; do
+for image in "$api_source" "$web_source" "$previous_api_source" "$previous_web_source" "$db_source" "$simulator_source"; do
   docker image inspect "$image" >/dev/null
 done
 mkdir -p "$test_root/releases" "$test_root/config"
@@ -77,10 +90,13 @@ for version in "$old_version" "$new_version" "$bad_version" "$missing_version" "
   cp -R "$source_root/infra/deploy" "$source_root/infra/compose" "$source_root/infra/caddy" \
     "$test_root/releases/$version/infra/"
 done
+cp "$BORA_TEST_PREVIOUS_COMPOSE" "$test_root/releases/$old_version/infra/compose/compose.prod.yml"
 export API_IMAGE="127.0.0.1:$registry_port/bora-test-api"
 readonly test_api_repository="$API_IMAGE"
 export WEB_IMAGE="127.0.0.1:$registry_port/bora-test-web"
 export DB_IMAGE="127.0.0.1:$registry_port/bora-test-db"
+export SIMULATOR_IMAGE="127.0.0.1:$registry_port/bora-test-simulator"
+readonly test_simulator_repository="$SIMULATOR_IMAGE"
 export BORA_CONFIG_DIR="$test_root/config"
 cat > "$test_root/env.production" <<EOF
 DOMAIN=bora.example.test
@@ -90,9 +106,14 @@ POSTGRES_USER=bora
 POSTGRES_PASSWORD=isolated_test_only
 BORA_SESSION_SECURE=false
 BORA_CONFIRMATION_SECRET=bora-isolated-deployment-test-confirmation-key
+BORA_SIMULATOR_KEY=bora-isolated-deployment-test-simulator-key
+SIM_SEED=2026
+SIM_COURIER_COUNT=2
+SIM_STORE_COUNT=1
 API_IMAGE=$API_IMAGE
 WEB_IMAGE=$WEB_IMAGE
 DB_IMAGE=$DB_IMAGE
+SIMULATOR_IMAGE=$SIMULATOR_IMAGE
 EOF
 
 docker run --detach --name "$registry" --publish "127.0.0.1:$registry_port:5000" registry:3 >/dev/null
@@ -112,6 +133,8 @@ docker push "$WEB_IMAGE:$old_version" >/dev/null
 for version in "$new_version" "$bad_version" "$bad_import_version"; do
   docker tag "$web_source" "$WEB_IMAGE:$version"
   docker push "$WEB_IMAGE:$version" >/dev/null
+  docker tag "$simulator_source" "$SIMULATOR_IMAGE:$version"
+  docker push "$SIMULATOR_IMAGE:$version" >/dev/null
 done
 printf 'FROM %s\nENTRYPOINT ["/bin/sh", "-c", "exit 42"]\n' "$api_source" \
   | docker build --tag "$API_IMAGE:$bad_version" - >/dev/null
@@ -127,6 +150,8 @@ docker compose --project-name "$project" --project-directory "$test_root" \
   create db api1 api2 caddy
 docker network connect "${project}_edge" "$HOSTNAME"
 bash "$test_root/releases/$old_version/infra/deploy/deploy.sh" "$old_version"
+test -z "$(docker ps --all --quiet --filter "label=com.docker.compose.project=$project" \
+  --filter label=com.docker.compose.service=simulator)"
 test "$(cat "$test_root/config/dispatch-version")" = "$old_version"
 test "$(stat -c '%a' "$test_root/config/dispatch-version")" = 644
 (
@@ -306,6 +331,20 @@ service_id() {
     -f "$test_root/releases/$old_version/infra/compose/compose.release-test.yml" ps --quiet "$1"
 }
 
+simulator_id() {
+  docker ps --all --quiet --filter "label=com.docker.compose.project=$project" \
+    --filter label=com.docker.compose.service=simulator
+}
+
+assert_simulator_ready() {
+  local container
+  container=$(simulator_id)
+  [[ -n $container && $container != *$'\n'* ]]
+  test "$(docker inspect --format '{{.Config.Image}}' "$container")" = "$test_simulator_repository:$new_version"
+  test "$(docker inspect --format '{{.State.Health.Status}}' "$container")" = healthy
+  docker exec "$container" curl --fail --silent http://127.0.0.1:8090/health >/dev/null
+}
+
 # As fixtures vivem somente no banco descartável deste projeto Compose.
 gate_order=72000000-0000-4000-8000-000000000001
 gate_courier=71000000-0000-4000-8000-000000000001
@@ -324,13 +363,24 @@ create_dispatch_fixture() {
   result=$(dispatch_sql --set "order_id=$order_id" --set "courier_id=$courier_id" \
     --set "public_code=dispatch-$order_id" <<'BORA_DISPATCH_FIXTURE'
 BEGIN;
+-- Contexto privado e loja afastada do pickup público do simulador reduzido.
+-- A mesma transação publica o courier e o pedido prioritário para as duas APIs.
+INSERT INTO demo_contexts(id,created_at,expires_at)
+VALUES(:'order_id'::uuid,clock_timestamp(),clock_timestamp()+interval '2 hours');
+INSERT INTO stores(id,name,service_area_id,location,simulated)
+SELECT :'order_id'::uuid,'Loja privada do teste de implantação',service_area_id,location,false
+FROM stores WHERE simulated ORDER BY id DESC LIMIT 1;
 INSERT INTO couriers(id,name,status,location,location_updated_at,simulated)
-SELECT :'courier_id'::uuid,'Entregador do teste de implantação','AVAILABLE',location,clock_timestamp(),true
-FROM stores WHERE simulated ORDER BY id LIMIT 1;
-INSERT INTO orders(id,public_code,store_id,dropoff,status,sla_deadline,next_attempt_at,created_at)
-SELECT :'order_id'::uuid,:'public_code',id,location,'SEARCHING',
-  clock_timestamp()+interval '30 minutes',clock_timestamp(),clock_timestamp()-interval '1 second'
-FROM stores WHERE simulated ORDER BY id LIMIT 1;
+SELECT :'courier_id'::uuid,'Entregador privado do teste de implantação','AVAILABLE',location,clock_timestamp(),false
+FROM stores WHERE id=:'order_id'::uuid;
+INSERT INTO users(id,context_id,display_name,role,store_id,courier_id,visitor,expires_at)
+VALUES
+  (:'order_id'::uuid,:'order_id'::uuid,'Loja da fixture','STORE',:'order_id'::uuid,NULL,true,clock_timestamp()+interval '2 hours'),
+  (:'courier_id'::uuid,:'order_id'::uuid,'Entregador da fixture','COURIER',NULL,:'courier_id'::uuid,true,clock_timestamp()+interval '2 hours');
+INSERT INTO orders(id,public_code,store_id,visitor_context_id,owner_user_id,dropoff,status,sla_deadline,next_attempt_at,created_at)
+SELECT :'order_id'::uuid,:'public_code',id,:'order_id'::uuid,:'order_id'::uuid,location,'SEARCHING',
+  clock_timestamp()+interval '30 minutes',clock_timestamp()-interval '1 hour',clock_timestamp()-interval '1 hour 1 second'
+FROM stores WHERE id=:'order_id'::uuid;
 COMMIT;
 SELECT (SELECT count(*) FROM orders WHERE id=:'order_id'::uuid),
   (SELECT count(*) FROM couriers WHERE id=:'courier_id'::uuid);
@@ -452,6 +502,7 @@ BORA_KEEP_DEADLINE
     touch "$test_root/rollback-deadline-ready"
     sleep 0.5
   done
+  date +%s > "$test_root/rollback-gate-opened-at"
 }
 
 # A importação precisa falhar antes de alterar o estado ou os serviços saudáveis.
@@ -486,6 +537,8 @@ fi
 gate_observer_pid=
 cat "$test_root/dispatch-gate.log"
 test "$(cat "$test_root/config/dispatch-version")" = "$new_version"
+assert_simulator_ready
+simulator_after_update=$(simulator_id)
 wait_pending_fixture "$gate_order" "$gate_courier"
 retire_gate_fixture >/dev/null
 grep -Fxq "API1_VERSION=$new_version" "$test_root/state.env"
@@ -493,6 +546,8 @@ grep -Fxq "API2_VERSION=$new_version" "$test_root/state.env"
 grep -Fxq "WEB_VERSION=$new_version" "$test_root/state.env"
 grep -Fxq "DB_VERSION=$old_version" "$test_root/state.env"
 bash "$test_root/releases/$new_version/infra/deploy/deploy.sh" "$new_version"
+assert_simulator_ready
+test "$(simulator_id)" = "$simulator_after_update"
 test "$(cat "$test_root/config/dispatch-version")" = "$new_version"
 grep -Fxq "API1_VERSION=$old_version" "$test_root/previous.env"
 if bash "$test_root/releases/$missing_version/infra/deploy/deploy.sh" "$missing_version"; then
@@ -501,6 +556,8 @@ if bash "$test_root/releases/$missing_version/infra/deploy/deploy.sh" "$missing_
 fi
 grep -Fxq "API1_VERSION=$old_version" "$test_root/previous.env"
 grep -Fxq "API1_VERSION=$new_version" "$test_root/state.env"
+assert_simulator_ready
+test "$(simulator_id)" = "$simulator_after_update"
 
 if bash "$test_root/releases/$bad_version/infra/deploy/deploy.sh" "$bad_version"; then
   printf '%s\n' 'A imagem inválida foi aceita incorretamente.' >&2
@@ -510,6 +567,7 @@ grep -Fxq "API1_VERSION=$new_version" "$test_root/state.env"
 grep -Fxq "API2_VERSION=$new_version" "$test_root/state.env"
 grep -Fxq "WEB_VERSION=$new_version" "$test_root/state.env"
 grep -Fxq "DB_VERSION=$old_version" "$test_root/state.env"
+assert_simulator_ready
 
 create_dispatch_fixture "$rollback_order" "$rollback_courier"
 wait_pending_fixture "$rollback_order" "$rollback_courier"
@@ -524,12 +582,25 @@ for _ in $(seq 1 20); do
 done
 test -e "$test_root/rollback-deadline-ready"
 bash "$test_root/releases/$new_version/infra/deploy/rollback.sh"
+test -z "$(simulator_id)"
 if ! wait "$rollback_deadline_pid"; then
   cat "$test_root/dispatch-rollback.log" >&2
   exit 1
 fi
 rollback_deadline_pid=
 test "$(cat "$test_root/config/dispatch-version")" = "$old_version"
+test "$(stat -c '%a' "$test_root/.simulator-stopped-at")" = 600
+test -f "$test_root/rollback-gate-opened-at"
+legacy_quiet_seconds=$(( $(cat "$test_root/rollback-gate-opened-at") - $(cat "$test_root/.simulator-stopped-at") ))
+(( legacy_quiet_seconds >= 40 ))
+simulated_fresh=$(dispatch_sql <<'BORA_LEGACY_GPS'
+SELECT count(*) FROM couriers WHERE simulated
+  AND location_updated_at>=clock_timestamp()-interval '30 seconds'
+  AND location_updated_at<=clock_timestamp()+interval '5 seconds';
+BORA_LEGACY_GPS
+)
+test "$simulated_fresh" = 0
+printf 'Rollback legado: gate reaberto após %s segundos, sem GPS simulado ainda fresco.\n' "$legacy_quiet_seconds"
 # Confirma a imagem de ambos antes de esperar a expiração pelo código anterior.
 for service in api1 api2; do
   test "$(docker inspect --format '{{.Config.Image}}' "$(service_id "$service")")" = "$test_api_repository:$old_version"
@@ -591,5 +662,5 @@ docker logs "$persistent_probe"
   printf '%s\n' 'O probe persistente registrou falhas HTTP ou de conexão.' >&2
   exit 1
 }
-printf 'Integração aprovada: bootstrap, falha de importação, atualização, rollback automático e manual; %s respostas curl HTTP 200, probe Node sem falhas, Caddy e banco preservados, gate de criação conferido e prazo preservado no rollback, sem reload.\n' \
+printf 'Integração aprovada: bootstrap legado sem simulador, falha de importação, atualização com um simulador saudável, rollback automático e manual sem processo órfão; %s respostas curl HTTP 200, probe Node sem falhas, Caddy e banco preservados, gate de criação conferido e prazo preservado no rollback, sem reload.\n' \
   "$(wc -l < "$test_root/http-probe.log")"

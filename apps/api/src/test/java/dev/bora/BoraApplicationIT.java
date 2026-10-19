@@ -15,12 +15,14 @@ import java.nio.file.Path;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.modulith.core.ApplicationModules;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -56,11 +58,21 @@ class BoraApplicationIT {
   @Autowired RoutingService routing;
   @Autowired Environment environment;
 
+  @Autowired
+  @Qualifier("taskScheduler") ThreadPoolTaskScheduler scheduler;
+
   @LocalServerPort int port;
 
   @Test
   void keepsDomainModulesClosed() {
     ApplicationModules.of(BoraApplication.class).verify();
+  }
+
+  @Test
+  void applicationSchedulesUseTheirOwnFourThreads() throws Exception {
+    assertThat(scheduler.getPoolSize()).isEqualTo(4);
+    assertThat(scheduler.submit(() -> Thread.currentThread().getName()).get())
+        .startsWith("bora-scheduled-");
   }
 
   @Test

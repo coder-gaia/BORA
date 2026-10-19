@@ -53,6 +53,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
@@ -61,6 +62,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -100,7 +102,9 @@ class FulfillmentIT {
   @Autowired CourierDirectory couriers;
   @Autowired OrderWorkflow orders;
   @Autowired OrderConfirmationCodes codes;
-  @Autowired DeliveryProgress progress;
+  @MockitoSpyBean DeliveryProgress progress;
+  @Autowired DeliveryProgressDispatcher dispatcher;
+  @Autowired ApplicationContext application;
   @Autowired PendingOfferCleanup cleanup;
   @Autowired DataSource dataSource;
   @Autowired ApplicationEventPublisher events;
@@ -111,9 +115,11 @@ class FulfillmentIT {
   @LocalServerPort int port;
 
   @BeforeEach
-  void resetDependencies() {
+  void resetDependencies() throws InterruptedException {
+    assertThat(dispatcher.awaitIdle(Duration.ofSeconds(5))).isTrue();
     clock.at.set(NOW);
     reset(routing);
+    reset(progress);
     doAnswer(
             call -> {
               GeoPoint point = call.getArgument(0);
@@ -134,6 +140,132 @@ class FulfillmentIT {
             })
         .when(routing)
         .route(any(), any());
+  }
+
+  @Test
+  @Timeout(30)
+  void persistsNewGpsWhileThePreviousDeliveryProgressIsBlocked() throws Exception {
+    Browser browser = new Browser();
+    browser.login("COURIER");
+    UUID id = fixture(browser, OrderStatus.ASSIGNED, false);
+    setPosition(browser.courierId, NOW.minusSeconds(3), FAR);
+    var progressStarted = new CountDownLatch(1);
+    var allowProgress = new CountDownLatch(1);
+    doAnswer(
+            call -> {
+              progressStarted.countDown();
+              assertThat(allowProgress.await(10, TimeUnit.SECONDS)).isTrue();
+              return call.callRealMethod();
+            })
+        .when(progress)
+        .positionsPersisted(org.mockito.ArgumentMatchers.anyList());
+    Object buffer = application.getBean("courierPositionBuffer");
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      try {
+        for (int seconds : List.of(2, 1)) {
+          Instant recorded = NOW.minusSeconds(seconds);
+          assertThat(
+                  browser
+                      .post(
+                          "/api/v1/courier/positions",
+                          mapper.writeValueAsString(
+                              Map.of("positions", List.of(new PositionSample(recorded, FAR)))))
+                      .statusCode())
+              .isEqualTo(202);
+          executor
+              .submit(() -> ReflectionTestUtils.invokeMethod(buffer, "flush"))
+              .get(1, TimeUnit.SECONDS);
+          assertThat(couriers.find(browser.courierId).locationUpdatedAt()).isEqualTo(recorded);
+          assertThat(progressStarted.await(5, TimeUnit.SECONDS)).isTrue();
+        }
+        assertThat(tracks(id)).isZero();
+      } finally {
+        allowProgress.countDown();
+      }
+    }
+    assertThat(dispatcher.awaitIdle(Duration.ofSeconds(5))).isTrue();
+    assertThat(tracks(id)).isEqualTo(2);
+  }
+
+  @Test
+  @Timeout(30)
+  void queuedSamplesKeepCompletedHistoryWithoutCrossingReassignmentOrCompletionTime()
+      throws Exception {
+    Browser delivered = new Browser(), canceled = new Browser(), reassigned = new Browser();
+    delivered.login("COURIER");
+    canceled.login("COURIER");
+    reassigned.login("COURIER");
+    UUID completed = fixture(delivered, OrderStatus.PICKED_UP, false);
+    UUID canceledId = fixture(canceled, OrderStatus.ASSIGNED, false);
+    UUID previous = fixture(reassigned, OrderStatus.ASSIGNED, false);
+    for (Browser browser : List.of(delivered, canceled, reassigned)) {
+      setPosition(browser.courierId, NOW, FAR);
+    }
+    var progressStarted = new CountDownLatch(1);
+    var allowProgress = new CountDownLatch(1);
+    doAnswer(
+            call -> {
+              progressStarted.countDown();
+              assertThat(allowProgress.await(10, TimeUnit.SECONDS)).isTrue();
+              return call.callRealMethod();
+            })
+        .when(progress)
+        .positionsPersisted(org.mockito.ArgumentMatchers.anyList());
+    UUID unrelated = UUID.randomUUID();
+    events.publishEvent(
+        new CourierPositionsPersisted(
+            Map.of(unrelated, List.of(new PositionSample(NOW, FAR))), Map.of(unrelated, 0L)));
+    assertThat(progressStarted.await(5, TimeUnit.SECONDS)).isTrue();
+    try {
+      for (Browser browser : List.of(delivered, canceled, reassigned)) {
+        Long epoch =
+            jdbc.sql("SELECT position_epoch FROM couriers WHERE id=:id")
+                .param("id", browser.courierId)
+                .query(Long.class)
+                .single();
+        events.publishEvent(
+            new CourierPositionsPersisted(
+                Map.of(
+                    browser.courierId,
+                    List.of(
+                        new PositionSample(NOW.minusSeconds(1), FAR),
+                        new PositionSample(NOW.plusSeconds(4), PICKUP))),
+                Map.of(browser.courierId, epoch)));
+      }
+      assertThat(browserStatus(delivered, completed, 0, codes.code(completed))).isEqualTo(200);
+      canceled.login("OPERATIONS");
+      assertThat(
+              canceled
+                  .post("/api/v1/orders/" + canceledId + "/cancel", "{\"expectedVersion\":0}")
+                  .statusCode())
+          .isEqualTo(200);
+      new TransactionTemplate(manager)
+          .executeWithoutResult(
+              status -> {
+                orders.lockForUpdate(previous);
+                orders.reassign(previous, 0, "test:queued-reassign");
+              });
+      UUID next = fixture(reassigned, OrderStatus.SEARCHING, false);
+      new TransactionTemplate(manager)
+          .executeWithoutResult(
+              status -> {
+                orders.lockForUpdate(next);
+                couriers.transition(reassigned.courierId, new CourierCommand.ReceiveOffer());
+                couriers.transition(reassigned.courierId, new CourierCommand.AcceptOffer());
+                orders.assign(next, 0, reassigned.courierId, "test:queued-assign");
+              });
+      setPosition(delivered.courierId, NOW.plusSeconds(3), PICKUP);
+      allowProgress.countDown();
+      assertThat(dispatcher.awaitIdle(Duration.ofSeconds(5))).isTrue();
+      assertThat(tracks(completed)).isEqualTo(2);
+      assertThat(tracks(canceledId)).isEqualTo(1);
+      assertThat(tracks(previous)).isZero();
+      assertThat(tracks(next)).isZero();
+      assertThat(orders.find(next).orElseThrow().status()).isEqualTo(OrderStatus.ASSIGNED);
+    } finally {
+      allowProgress.countDown();
+      assertThat(dispatcher.awaitIdle(Duration.ofSeconds(5))).isTrue();
+    }
   }
 
   @Test
@@ -480,11 +612,13 @@ class FulfillmentIT {
     assertThat(currentEpoch).isEqualTo(oldEpoch + 3);
     setPosition(browser.courierId, future, PICKUP);
     events.publishEvent(delayed);
+    assertThat(dispatcher.awaitIdle(Duration.ofSeconds(5))).isTrue();
     assertThat(tracks(next)).isZero();
     assertThat(orders.find(next).orElseThrow().status()).isEqualTo(OrderStatus.ASSIGNED);
     events.publishEvent(
         new CourierPositionsPersisted(
             delayed.positions(), Map.of(browser.courierId, currentEpoch)));
+    assertThat(dispatcher.awaitIdle(Duration.ofSeconds(5))).isTrue();
     assertThat(tracks(next)).isEqualTo(1);
     assertThat(orders.find(next).orElseThrow().status()).isEqualTo(OrderStatus.AT_STORE);
   }
@@ -507,6 +641,7 @@ class FulfillmentIT {
         .param("id", browser.courierId)
         .update();
     events.publishEvent(delayed);
+    assertThat(dispatcher.awaitIdle(Duration.ofSeconds(5))).isTrue();
     assertThat(tracks(id)).isZero();
     assertThat(orders.find(id).orElseThrow().status()).isEqualTo(OrderStatus.ASSIGNED);
     setPosition(browser.courierId, NOW, FAR);
@@ -771,7 +906,8 @@ class FulfillmentIT {
         .single();
   }
 
-  private void publishPositions(UUID courier, List<PositionSample> samples) {
+  private void publishPositions(UUID courier, List<PositionSample> samples)
+      throws InterruptedException {
     Long epoch =
         jdbc.sql("SELECT position_epoch FROM couriers WHERE id=:id")
             .param("id", courier)
@@ -779,6 +915,7 @@ class FulfillmentIT {
             .single();
     events.publishEvent(
         new CourierPositionsPersisted(Map.of(courier, samples), Map.of(courier, epoch)));
+    assertThat(dispatcher.awaitIdle(Duration.ofSeconds(5))).isTrue();
   }
 
   private int browserStatus(Browser browser, UUID id, long version, String code) throws Exception {

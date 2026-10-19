@@ -1,0 +1,26 @@
+# Todos os processos medidos compartilham os mesmos dois processadores lógicos.
+# É um perfil local amd64; não representa uma medição da VM arm64 de produção.
+services:
+  graph-import:
+    cpuset: ${BORA_SIM_CPUSET:-0,1}
+  db:
+    cpuset: ${BORA_SIM_CPUSET:-0,1}
+    mem_limit: 2g
+    shm_size: 256m
+  api1:
+    cpuset: ${BORA_SIM_CPUSET:-0,1}
+  api2:
+    cpuset: ${BORA_SIM_CPUSET:-0,1}
+  simulator:
+    cpuset: ${BORA_SIM_CPUSET:-0,1}
+  web:
+    cpuset: ${BORA_SIM_CPUSET:-0,1}
+    mem_limit: 512m
+  caddy:
+    cpuset: ${BORA_SIM_CPUSET:-0,1}
+    mem_limit: 128m
+
+volumes:
+  routing-graphs:
+    external: true
+    name: ${BORA_SIM_GRAPH_VOLUME:-bora-cluster_routing-graphs}

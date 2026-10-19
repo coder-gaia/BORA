@@ -80,6 +80,9 @@ jobs:
           - image: web
             context: .
             file: apps/web/Dockerfile.prod
+          - image: simulator
+            context: .
+            file: apps/simulator/Dockerfile
           - image: postgis
             context: infra/postgres
             file: infra/postgres/Dockerfile

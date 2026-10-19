@@ -4,8 +4,8 @@ A configuração de referência para produção usa uma VM Azure com Ubuntu 24.0
 Docker Compose, PostgreSQL com PostGIS, duas instâncias da API e Caddy.
 O domínio previsto é `bora.alexandregaia.me`.
 Uma única VM continua sendo um ponto único de falha. A continuidade durante atualizações
-é verificada com requisições HTTP reais; conexões WebSocket precisarão recuperar estado
-quando esse recurso existir.
+é verificada com requisições HTTP reais; conexões WebSocket recuperam suas assinaturas
+e consultam um novo snapshot depois da reconexão.
 
 ## Conta, VM e DNS
 
@@ -85,12 +85,17 @@ O firewall é ajustado por uma unidade idempotente que adiciona somente uma perm
 80/443. As regras, políticas e portas SSH existentes são preservadas. O NSG do Azure e o
 firewall da VM precisam permitir o tráfego; configurar um deles não substitui o outro.
 
-O provisionamento gera uma senha aleatória para o banco e uma chave independente
-`BORA_CONFIRMATION_SECRET` em `/opt/bora/env.production`, com permissão `0600`, sem imprimir
-esses valores. A execução seguinte preserva o arquivo. Conferir o domínio e o e-mail de
+O provisionamento gera uma senha aleatória para o banco e as chaves independentes
+`BORA_CONFIRMATION_SECRET` e `BORA_SIMULATOR_KEY` em `/opt/bora/env.production`, com permissão
+`0600`, sem imprimir esses valores. A execução seguinte preserva o arquivo. Conferir o domínio e o e-mail de
 ACME no próprio arquivo, usando um editor na VM. Em instalações anteriores ao M04, adicionar
 uma chave aleatória persistente de pelo menos 32 caracteres antes da atualização. Preservar
 essa chave nos próximos deploys e no rollback: ela deriva os códigos dos pedidos existentes.
+
+Uma instalação anterior ao simulador também precisa de `BORA_SIMULATOR_KEY` aleatória de pelo
+menos 32 caracteres. Ela autoriza somente o cliente interno; as rotas de provisionamento ficam
+bloqueadas na origem pública. Manter `SIM_SEED` igual na API e no simulador. A configuração e
+os limites estão no [guia de simulação](simulacao.md).
 
 Em produção, `BORA_SESSION_SECURE=true` restringe o cookie de sessão ao HTTPS. As duas APIs
 compartilham sessões no PostgreSQL. O Tomcat interpreta os cabeçalhos encaminhados pelo
@@ -149,6 +154,15 @@ As APIs montam o diretório de configuração completo somente para leitura. Ass
 atômicas dos arquivos ficam visíveis sem recriar o bind mount. Na recuperação, o script fecha
 primeiro o marcador e só o reabre se o bundle, as duas APIs e a web restaurados coincidirem.
 O ambiente local libera a criação explicitamente; produção exige a ativação por versão.
+
+O simulador é interrompido antes da troca de APIs. Ele só volta após as duas APIs, a web, o
+teste público e a abertura do despacho na versão de destino. Sua imagem usa o SHA do bundle;
+não existe uma versão independente em `state.env`. A retomada preserva as identidades e os
+trabalhos dos atores no banco. No rollback para um bundle sem simulador, o processo é removido
+e o script aguarda pelo menos 40 segundos desde sua parada antes de liberar o despacho
+antigo. Isso permite que suas últimas posições expirem e evita que a versão antiga escolha
+um entregador simulado para um pedido privado. A parada é registrada em arquivo restrito
+fora do diretório público, inclusive quando uma tentativa é interrompida.
 
 O Caddyfile só é substituído quando seu conteúdo muda. Essa mudança real exige reload e pode
 encerrar conexões HTTP ociosas; a recuperação para um bundle com configuração antiga também
@@ -211,17 +225,19 @@ Os testes usam um projeto Compose, um registry local, tags de 40 caracteres e vo
 Constroem uma imagem inválida da API para verificar o rollback automático. A origem consultada
 é o próprio Caddy HTTP na rede isolada de testes; o teste não valida DNS ou emissão de certificado.
 
-Com Docker ativo, preparar as três imagens e executar:
+Com Docker ativo, preparar as quatro imagens e executar:
 
 ```sh
 docker build -t bora-dev-api:latest -f apps/api/Dockerfile .
 docker build -t bora-web:m01-assets -f apps/web/Dockerfile.prod .
+docker build -t bora-simulator:dev -f apps/simulator/Dockerfile .
 docker build -t bora-postgis:18.6-3.6.4 infra/postgres
 bash infra/deploy/test.sh
 ```
 
-O mesmo launcher pode receber `BORA_TEST_API_IMAGE`, `BORA_TEST_WEB_IMAGE` e
-`BORA_TEST_DB_IMAGE` para usar as imagens já construídas pelo CI. As variáveis opcionais
+O mesmo launcher pode receber `BORA_TEST_API_IMAGE`, `BORA_TEST_WEB_IMAGE`,
+`BORA_TEST_DB_IMAGE` e `BORA_TEST_SIMULATOR_IMAGE` para usar as imagens já construídas pelo CI.
+As variáveis opcionais
 `BORA_TEST_PREVIOUS_API_IMAGE` e `BORA_TEST_PREVIOUS_WEB_IMAGE` permitem fornecer imagens
 efetivamente diferentes para a versão anterior. Ele prepara o executor Linux,
 testa bootstrap, atualização, recuperação automática e rollback manual, e remove os containers e volumes do

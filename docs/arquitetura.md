@@ -3,8 +3,8 @@
 Bora mantém API, simulador e interface em um monorepo. O backend evolui como monolito modular,
 com transações locais e fronteiras verificáveis. A base atual contém saúde operacional,
 máquinas de estado, esquema PostGIS, sessões compartilhadas, pedidos autenticados, histórico
-transacional e roteamento embutido. O simulador ainda
-não executa cenários.
+transacional e roteamento embutido. Um processo separado simula lojas e entregadores por HTTP,
+com sessões independentes por ator e sem acesso direto ao banco.
 
 ```mermaid
 flowchart LR
@@ -135,3 +135,15 @@ perdidas; a consulta HTTP periódica continua disponível durante a desconexão.
 O horário do servidor acompanha a oferta para que a contagem não dependa do ajuste do relógio
 do dispositivo. As transições continuam validadas no servidor. Consulte os fluxos e limites em
 [entregadores e posições](entregadores-e-posicoes.md).
+
+## Simulação
+
+O simulador usa uma thread virtual por entregador e por loja, com um único cliente HTTP e
+cookies isolados por ator. Identidades estáveis permitem retomar entregas após reinício;
+disponibilidade, posições, ofertas, coleta e entrega usam as APIs normais. A preparação das
+identidades exige uma chave interna, sessão e CSRF. O proxy público bloqueia essas rotas.
+
+Pedidos públicos das lojas simuladas dispensam confirmação. Pedidos de visitantes preservam
+contexto, limite de cinco ativos e código; o despacho não os oferece a entregadores simulados.
+A semente controla os sorteios, e movimento e duração usam o mesmo fator `SIM_SPEED` do
+roteamento. Consulte [simulação e qualificação](simulacao.md).

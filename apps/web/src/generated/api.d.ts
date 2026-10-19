@@ -173,6 +173,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/map/config': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Consultar o fator de velocidade da simulação */
+    get: operations['getMapConfig'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/map/snapshot': {
     parameters: {
       query?: never;
@@ -611,6 +628,10 @@ export interface components {
     SessionView: {
       authenticated: boolean;
       user: components['schemas']['DemoUserView'] | null;
+    };
+    SimulationConfig: {
+      /** Formato: double */
+      simulationSpeed: number;
     };
     StoreView: {
       /** Formato: uuid */
@@ -1103,6 +1124,26 @@ export interface operations {
         };
         content: {
           'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
+  getMapConfig: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          '*/*': components['schemas']['SimulationConfig'];
         };
       };
     };

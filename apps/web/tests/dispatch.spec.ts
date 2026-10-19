@@ -1,4 +1,4 @@
-import { chooseRole } from './demo';
+import { chooseRole, openOrder } from './demo';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import type { components } from '../src/generated/api';
 
@@ -128,7 +128,7 @@ test('aceita uma oferta privada e conclui a entrega após conferir o código', a
   ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Entrega em andamento' })).toHaveCount(0);
   await chooseRole(page, 'Sou loja');
-  await page.locator('.order-list-button').first().click();
+  await openOrder(page, order.id);
   await expect(page.locator('.order-detail').getByRole('status')).toHaveText('Entregue');
   await expect(page.locator('.order-timeline')).toContainText('Oferta aceita');
   expect(errors).toEqual([]);
@@ -181,7 +181,7 @@ test('redistribui pela operação e libera o entregador anterior', async ({ page
   await page.getByRole('button', { name: 'Aceitar oferta', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Entrega em andamento' })).toBeVisible();
   await chooseRole(page, 'Operação');
-  await page.locator('.order-list-button').first().click();
+  await openOrder(page, order.id);
   await expect(
     page.getByRole('button', { name: 'Redistribuir pedido', exact: true }),
   ).toBeEnabled();

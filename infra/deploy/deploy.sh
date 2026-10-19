@@ -27,6 +27,7 @@ if [[ -f $BORA_ROOT/state.env ]]; then
     if proxy_uses_marker; then set_upstreams 'api1:8080 api2:8080'; fi
     public_smoke
     resume_dispatch
+    resume_simulator
     log "A versão já está ativa: $target_version"
     exit 0
   fi
@@ -43,6 +44,8 @@ dc config --quiet
 docker pull "$API_IMAGE:$target_version"
 docker pull "$WEB_IMAGE:$target_version"
 docker pull "$DB_IMAGE:$DB_VERSION"
+services=$(dc --profile deploy config --services)
+if grep -Fxq simulator <<< "$services"; then docker pull "$SIMULATOR_IMAGE:$target_version"; fi
 
 old_web_version=$WEB_VERSION
 WEB_VERSION=$target_version
@@ -78,6 +81,7 @@ if service_running caddy; then
 fi
 
 changes_started=true
+stop_simulator
 write_dispatch_version disabled
 copy_proxy_config
 apply_proxy_config
@@ -101,6 +105,7 @@ fi
 set_upstreams 'api1:8080 api2:8080'
 public_smoke
 resume_dispatch
+resume_simulator
 if [[ $has_previous == true ]]; then commit_previous_state; fi
 write_state "$BORA_ROOT/state.env"
 trap - ERR INT TERM

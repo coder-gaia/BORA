@@ -18,11 +18,13 @@ x-api: &api
     SERVER_FORWARD_HEADERS_STRATEGY: native
     BORA_SESSION_SECURE: ${BORA_SESSION_SECURE:-true}
     BORA_CONFIRMATION_SECRET: ${BORA_CONFIRMATION_SECRET:?Defina BORA_CONFIRMATION_SECRET.}
+    BORA_SIMULATOR_KEY: ${BORA_SIMULATOR_KEY:?Defina BORA_SIMULATOR_KEY.}
     SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: 30s
     MANAGEMENT_ENDPOINT_HEALTH_SHOW_COMPONENTS: always
     MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: never
     BORA_GRAPH_ROOT: /var/lib/bora/routing
     SIM_SPEED: ${SIM_SPEED:-3}
+    SIM_SEED: ${SIM_SEED:-2026}
   depends_on:
     db:
       condition: service_healthy
@@ -131,6 +133,48 @@ services:
     environment:
       <<: *api-environment
       BORA_RELEASE_VERSION: ${API2_VERSION:?Defina API2_VERSION.}
+
+  simulator:
+    image: ${SIMULATOR_IMAGE:-ghcr.io/coder-gaia/bora-simulator}:${BUNDLE_VERSION:?Defina BUNDLE_VERSION.}
+    restart: unless-stopped
+    environment:
+      BORA_API_URL: http://api1:8080
+      BORA_SIMULATOR_KEY: ${BORA_SIMULATOR_KEY:?Defina BORA_SIMULATOR_KEY.}
+      BORA_SIMULATOR_INTERNAL_HTTP: 'true'
+      SIM_SEED: ${SIM_SEED:-2026}
+      SIM_COURIER_COUNT: ${SIM_COURIER_COUNT:-120}
+      SIM_STORE_COUNT: ${SIM_STORE_COUNT:-40}
+      SIM_HEALTH_PORT: '8090'
+    depends_on:
+      api1:
+        condition: service_healthy
+      api2:
+        condition: service_healthy
+      caddy:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - --fail
+        - --silent
+        - http://127.0.0.1:8090/health
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    stop_grace_period: 30s
+    mem_limit: 512m
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - edge
+    logging: *logging
 
   web-assets:
     image: ${WEB_IMAGE:?Defina WEB_IMAGE.}:${WEB_VERSION:?Defina WEB_VERSION.}

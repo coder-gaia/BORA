@@ -61,6 +61,9 @@ management:
           include: livenessState
 
 bora:
+  simulator:
+    key: ${BORA_SIMULATOR_KEY:}
+    seed: ${SIM_SEED:2026}
   dispatch:
     require-activation: ${BORA_DISPATCH_REQUIRE_ACTIVATION:true}
     release-version: ${BORA_RELEASE_VERSION:}

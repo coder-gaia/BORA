@@ -59,12 +59,64 @@ dc() {
   fi
   env BORA_CONFIG_DIR="$BORA_CONFIG_DIR" \
     API_IMAGE="$API_IMAGE" WEB_IMAGE="$WEB_IMAGE" DB_IMAGE="$DB_IMAGE" \
+    SIMULATOR_IMAGE="$SIMULATOR_IMAGE" \
     BUNDLE_VERSION="$BUNDLE_VERSION" \
     API1_VERSION="$API1_VERSION" API2_VERSION="$API2_VERSION" \
     WEB_VERSION="$WEB_VERSION" DB_VERSION="$DB_VERSION" \
     docker compose --project-name "$BORA_PROJECT" --project-directory "$BORA_ROOT" \
       --env-file "$BORA_ROOT/env.production" \
       "${compose_files[@]}" "$@"
+}
+
+stop_simulator() {
+  local containers container temporary
+  containers=$(docker ps --all --quiet \
+    --filter "label=com.docker.compose.project=$BORA_PROJECT" \
+    --filter label=com.docker.compose.service=simulator) || return 1
+  while IFS= read -r container; do
+    [[ -n $container ]] || continue
+    docker stop --time 30 "$container" >/dev/null || return 1
+    # Persiste antes de remover o container para manter a proteção após uma interrupção.
+    temporary=$(mktemp "$BORA_ROOT/.simulator-stopped.XXXXXX") || return 1
+    printf '%s\n' "$(date +%s)" > "$temporary" || return 1
+    chmod 600 "$temporary" || return 1
+    mv -f "$temporary" "$BORA_ROOT/.simulator-stopped-at" || return 1
+    docker rm "$container" >/dev/null || return 1
+  done <<< "$containers"
+}
+
+wait_for_legacy_simulator() {
+  local services stopped_at now remaining
+  services=$(dc --profile deploy config --services) || return 1
+  if grep -Fxq simulator <<< "$services"; then return 0; fi
+  stop_simulator || return 1
+  [[ -f $BORA_ROOT/.simulator-stopped-at ]] || return 0
+  stopped_at=$(cat "$BORA_ROOT/.simulator-stopped-at") || return 1
+  [[ $stopped_at =~ ^[0-9]{1,12}$ ]] || fail 'Instante de parada do simulador inválido.' || return 1
+  now=$(date +%s) || return 1
+  (( stopped_at <= now + 5 )) || fail 'O relógio mudou após a parada do simulador.' || return 1
+  # O segundo adicional compensa o arredondamento do timestamp gravado.
+  remaining=$((stopped_at + 41 - now))
+  if (( remaining > 0 )); then
+    log "Aguardando $remaining segundos para o GPS simulado envelhecer antes do despacho legado."
+    sleep "$remaining" || return 1
+  fi
+}
+
+resume_simulator() {
+  local services
+  services=$(dc --profile deploy config --services) || return 1
+  if ! grep -Fxq simulator <<< "$services"; then
+    # O rollback para um bundle antigo também remove o processo órfão, sem volumes.
+    stop_simulator
+    return
+  fi
+  [[ $API1_VERSION == "$BUNDLE_VERSION" && $API2_VERSION == "$BUNDLE_VERSION" \
+    && $WEB_VERSION == "$BUNDLE_VERSION" \
+    && $(cat "$BORA_CONFIG_DIR/dispatch-version") == "$BUNDLE_VERSION" ]] \
+    || fail 'O simulador exige APIs, página e despacho da mesma versão ativa.' || return 1
+  service_ready api1 && service_ready api2 || return 1
+  dc up --detach --no-deps --wait --wait-timeout "$READY_TIMEOUT" simulator
 }
 
 prepare_routing_graph() {
@@ -138,6 +190,7 @@ write_dispatch_version() {
 resume_dispatch() {
   if [[ $API1_VERSION == "$BUNDLE_VERSION" && $API2_VERSION == "$BUNDLE_VERSION" \
     && $WEB_VERSION == "$BUNDLE_VERSION" ]]; then
+    wait_for_legacy_simulator || return 1
     write_dispatch_version "$BUNDLE_VERSION"
   else
     write_dispatch_version disabled
@@ -245,6 +298,7 @@ restore_previous() {
   local state_file=${1:-$BORA_ROOT/previous.env} first second first_version second_version
   [[ -f $state_file ]] || fail 'Não existe versão anterior registrada.' || return 1
   read_state "$state_file" PREVIOUS || return 1
+  stop_simulator || return 1
   select_bundle "$PREVIOUS_BUNDLE_VERSION" || return 1
   [[ $DB_VERSION == "$PREVIOUS_DB_VERSION" ]] || fail 'Rollback não pode trocar a versão do banco.' || return 1
   write_dispatch_version disabled || return 1
@@ -267,6 +321,7 @@ restore_previous() {
   set_upstreams 'api1:8080 api2:8080' || return 1
   public_smoke || return 1
   resume_dispatch || return 1
+  resume_simulator || return 1
   write_state "$BORA_ROOT/state.env"
 }
 
@@ -287,7 +342,7 @@ registry_cleanup() {
 initialize() {
   local command domain key
   umask 077
-  for command in docker flock curl sed mktemp realpath cmp grep; do
+  for command in docker flock curl sed mktemp realpath cmp grep date; do
     command -v "$command" >/dev/null || fail "Comando ausente: $command" || return 1
   done
   BORA_ROOT=$(realpath -e "${BORA_ROOT:-/opt/bora}") || return 1
@@ -308,7 +363,8 @@ initialize() {
   API_IMAGE=$(env_value API_IMAGE); API_IMAGE=${API_IMAGE:-ghcr.io/coder-gaia/bora-api}
   WEB_IMAGE=$(env_value WEB_IMAGE); WEB_IMAGE=${WEB_IMAGE:-ghcr.io/coder-gaia/bora-web}
   DB_IMAGE=$(env_value DB_IMAGE); DB_IMAGE=${DB_IMAGE:-ghcr.io/coder-gaia/bora-postgis}
-  for key in API_IMAGE WEB_IMAGE DB_IMAGE; do
+  SIMULATOR_IMAGE=$(env_value SIMULATOR_IMAGE); SIMULATOR_IMAGE=${SIMULATOR_IMAGE:-ghcr.io/coder-gaia/bora-simulator}
+  for key in API_IMAGE WEB_IMAGE DB_IMAGE SIMULATOR_IMAGE; do
     [[ ${!key} =~ ^[a-z0-9][a-z0-9./:_-]*$ ]] || fail "Nome de imagem inválido: $key" || return 1
   done
   domain=$(env_value DOMAIN)

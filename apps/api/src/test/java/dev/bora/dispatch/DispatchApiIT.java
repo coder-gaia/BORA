@@ -9,6 +9,7 @@ import dev.bora.demo.DemoLimits;
 import dev.bora.routing.*;
 import java.net.*;
 import java.net.http.*;
+import java.sql.Connection;
 import java.time.*;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -106,7 +107,7 @@ class DispatchApiIT {
   void reservesByRouteEtaAcceptsAtomicallyAndDoesNotLeakSecrets() throws Exception {
     Browser actor = new Browser();
     actor.login("COURIER");
-    UUID order = order(actor, false, 10);
+    UUID order = order(null, true, 10);
     online(actor.courierId, FAR);
     UUID closer = simulatedCourier(NEAR);
     doAnswer(call -> route(FAR, call.getArgument(1), 10)).when(routing).route(eq(FAR), any());
@@ -311,7 +312,7 @@ class DispatchApiIT {
   }
 
   @Test
-  void keepsForeignPrivateCouriersOutOfVisitorAndPublicOrders() throws Exception {
+  void keepsForeignCouriersOutOfPrivateOrdersAndAllowsThemInPublicOrders() throws Exception {
     Browser actor = new Browser();
     actor.login("COURIER");
     UUID order = order(actor, false, 10);
@@ -321,17 +322,100 @@ class DispatchApiIT {
     assertThat(dispatch.dispatchAvailableOrders()).isZero();
     assertThat(offers(order)).isZero();
     UUID publicOrder = order(null, true, 10);
-    assertThat(dispatch.dispatchAvailableOrders()).isZero();
-    assertThat(offers(publicOrder)).isZero();
-    UUID simulated = simulatedCourier(NEAR);
-    jdbc.sql("UPDATE orders SET next_attempt_at=:now WHERE id=:id")
-        .param("id", publicOrder)
-        .param("now", time(clock.instant()))
-        .update();
     assertThat(dispatch.dispatchAvailableOrders()).isEqualTo(1);
     assertThat(value("SELECT courier_id::text FROM offers WHERE id=:id", offer(publicOrder)))
+        .isEqualTo(foreign.courierId.toString());
+    assertThat(json(foreign.get("/api/v1/courier/offer")).path("offer").path("orderId").asString())
+        .isEqualTo(publicOrder.toString());
+    assertThat(foreign.post("/api/v1/offers/" + offer(publicOrder) + "/accept", "").statusCode())
+        .isEqualTo(204);
+    assertThat(offers(order)).isZero();
+    UUID simulated = simulatedCourier(NEAR);
+    UUID anotherPublic = order(null, true, 10);
+    assertThat(dispatch.dispatchAvailableOrders()).isEqualTo(1);
+    assertThat(value("SELECT courier_id::text FROM offers WHERE id=:id", offer(anotherPublic)))
         .isEqualTo(simulated.toString());
     assertThat(offers(order)).isZero();
+  }
+
+  @Test
+  void reservesPrivateSearchCourierWhileOtherContextsKeepReceivingOlderPublicOrders()
+      throws Exception {
+    Browser actor = new Browser();
+    actor.login("COURIER");
+    online(actor.courierId, NEAR);
+    Browser publicActor = new Browser();
+    publicActor.login("COURIER");
+    online(publicActor.courierId, FAR);
+    UUID publicOrder = order(null, true, 60);
+    jdbc.sql("UPDATE orders SET next_attempt_at=:next WHERE id=:id")
+        .param("next", time(NOW.minusSeconds(1)))
+        .param("id", publicOrder)
+        .update();
+    UUID privateOrder = order(actor, false, 10);
+    doAnswer(call -> route(NEAR, call.getArgument(1), 10)).when(routing).route(eq(NEAR), any());
+
+    assertThat(dispatch.dispatchAvailableOrders()).isEqualTo(2);
+    assertThat(value("SELECT courier_id::text FROM offers WHERE id=:id", offer(publicOrder)))
+        .isEqualTo(publicActor.courierId.toString());
+    assertThat(value("SELECT courier_id::text FROM offers WHERE id=:id", offer(privateOrder)))
+        .isEqualTo(actor.courierId.toString());
+    assertThat(json(actor.get("/api/v1/courier/offer")).path("offer").path("orderId").asString())
+        .isEqualTo(privateOrder.toString());
+    assertThat(actor.post("/api/v1/offers/" + offer(privateOrder) + "/accept", "").statusCode())
+        .isEqualTo(204);
+    assertThat(value("SELECT status FROM orders WHERE id=:id", privateOrder)).isEqualTo("ASSIGNED");
+    assertThat(
+            publicActor.post("/api/v1/offers/" + offer(publicOrder) + "/accept", "").statusCode())
+        .isEqualTo(204);
+  }
+
+  @Test
+  @Timeout(20)
+  void skipsContextWithUncommittedPrivateCreationWithoutWaitingWhileHoldingCourier()
+      throws Exception {
+    Browser actor = new Browser();
+    actor.login("COURIER");
+    online(actor.courierId, NEAR);
+    UUID publicOrder = order(null, true, 60);
+    UUID privateOrder;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var connection = dataSource.getConnection()) {
+      connection.setAutoCommit(false);
+      try (var lock =
+          connection.prepareStatement("SELECT id FROM demo_contexts WHERE id=? FOR UPDATE")) {
+        lock.setObject(1, actor.contextId);
+        lock.executeQuery().close();
+      }
+      privateOrder = insertUncommittedPrivateOrder(connection, actor);
+      var concurrent = executor.submit(dispatch::dispatchAvailableOrders);
+      assertThat(concurrent.get(5, TimeUnit.SECONDS)).isZero();
+      assertThat(offers(publicOrder)).isZero();
+      assertThat(value("SELECT status FROM couriers WHERE id=:id", actor.courierId))
+          .isEqualTo("AVAILABLE");
+      connection.commit();
+    }
+    assertThat(dispatch.dispatchAvailableOrders()).isEqualTo(1);
+    assertThat(offers(publicOrder)).isZero();
+    assertThat(value("SELECT courier_id::text FROM offers WHERE id=:id", offer(privateOrder)))
+        .isEqualTo(actor.courierId.toString());
+  }
+
+  @Test
+  void preservesExistingPublicOfferWhenPrivateSearchIsCreatedLater() throws Exception {
+    Browser actor = new Browser();
+    actor.login("COURIER");
+    online(actor.courierId, NEAR);
+    UUID publicOrder = order(null, true, 60);
+    assertThat(dispatch.dispatchAvailableOrders()).isEqualTo(1);
+    UUID existing = offer(publicOrder);
+    UUID privateOrder = order(actor, false, 10);
+    assertThat(dispatch.dispatchAvailableOrders()).isZero();
+    assertThat(value("SELECT status FROM offers WHERE id=:id", existing)).isEqualTo("PENDING");
+    assertThat(offers(privateOrder)).isZero();
+    assertThat(actor.post("/api/v1/offers/" + existing + "/accept", "").statusCode())
+        .isEqualTo(204);
+    assertThat(value("SELECT status FROM orders WHERE id=:id", publicOrder)).isEqualTo("ASSIGNED");
   }
 
   @Test
@@ -475,6 +559,28 @@ class DispatchApiIT {
         .param("context", simulated ? null : browser.contextId)
         .param("owner", simulated ? null : browser.userId)
         .update();
+    return id;
+  }
+
+  private UUID insertUncommittedPrivateOrder(Connection connection, Browser browser)
+      throws Exception {
+    UUID id = UUID.randomUUID();
+    try (var statement =
+        connection.prepareStatement(
+            """
+        INSERT INTO orders(id,public_code,store_id,dropoff,status,sla_deadline,next_attempt_at,created_at,visitor_context_id,owner_user_id)
+        VALUES(?,?,?,ST_SetSRID(ST_MakePoint(-46.65,-23.559),4326)::geography,'SEARCHING',?,?,?,?,?)
+        """)) {
+      statement.setObject(1, id);
+      statement.setString(2, UUID.randomUUID().toString());
+      statement.setObject(3, STORE);
+      statement.setObject(4, time(clock.instant().plusSeconds(1800)));
+      statement.setObject(5, time(clock.instant()));
+      statement.setObject(6, time(clock.instant().minusSeconds(10)));
+      statement.setObject(7, browser.contextId);
+      statement.setObject(8, browser.userId);
+      statement.executeUpdate();
+    }
     return id;
   }
 

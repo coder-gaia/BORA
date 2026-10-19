@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { useServiceHealth } from '@/hooks/use-service-health';
 import { cn } from '@/lib/utils';
 import { DemoPanel } from '@/components/demo-panel';
+import { SimulationNotice } from '@/components/simulation-notice';
 
 const healthMessages = {
   loading: {
@@ -161,7 +162,7 @@ export function App() {
 
       <footer className="site-footer">
         <p>Bora. Entregas em movimento.</p>
-        <p>Feito para conectar caminhos.</p>
+        <SimulationNotice />
       </footer>
     </div>
   );

@@ -31,6 +31,7 @@ import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -45,16 +46,22 @@ class DemoAuthController {
   private final SecurityContextRepository contexts;
   private final CsrfTokenRepository csrfTokens;
   private final SessionAuthenticationStrategy sessionAuthentication;
+  private final SimulatorGuard simulatorGuard;
+  private final SimulatorDirectory simulator;
 
   DemoAuthController(
       DemoIdentityService identity,
       DemoLimits limits,
       SecurityContextRepository contexts,
-      CsrfTokenRepository csrfTokens) {
+      CsrfTokenRepository csrfTokens,
+      SimulatorGuard simulatorGuard,
+      SimulatorDirectory simulator) {
     this.identity = identity;
     this.limits = limits;
     this.contexts = contexts;
     this.csrfTokens = csrfTokens;
+    this.simulatorGuard = simulatorGuard;
+    this.simulator = simulator;
     this.sessionAuthentication =
         new CompositeSessionAuthenticationStrategy(
             List.of(
@@ -87,6 +94,24 @@ class DemoAuthController {
     HttpSession session = request.getSession();
     UUID context = session.getAttribute(CONTEXT_ATTRIBUTE) instanceof UUID id ? id : null;
     DemoIdentityService.Login login = identity.login(requestBody.role(), context);
+    return establish(login, request, response);
+  }
+
+  @PostMapping("/simulator")
+  @Operation(hidden = true)
+  SessionView simulator(
+      @RequestHeader(value = SimulatorGuard.HEADER, required = false) String key,
+      @Valid @RequestBody SimulatorLogin body,
+      HttpServletRequest request,
+      HttpServletResponse response) {
+    simulatorGuard.require(key);
+    DemoIdentityService.Login login =
+        identity.simulatorLogin(simulator.actor(body.role(), body.index()));
+    return establish(login, request, response);
+  }
+
+  private SessionView establish(
+      DemoIdentityService.Login login, HttpServletRequest request, HttpServletResponse response) {
     UsernamePasswordAuthenticationToken authentication =
         UsernamePasswordAuthenticationToken.authenticated(
             login.principal(),
@@ -120,6 +145,8 @@ class DemoAuthController {
   @Schema(requiredProperties = "role")
   record DemoLogin(
       @NotNull(message = "Escolha um papel para entrar na demonstração.") DemoRole role) {}
+
+  record SimulatorLogin(@NotNull DemoRole role, @NotNull Integer index) {}
 
   @Schema(requiredProperties = {"headerName", "token"})
   record CsrfView(String headerName, String token) {}

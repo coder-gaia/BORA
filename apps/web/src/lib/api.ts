@@ -12,6 +12,7 @@ export type CourierWorkView = components['schemas']['CourierWorkView'];
 export type CourierRouteView = components['schemas']['CourierRouteView'];
 export type CourierOfferInbox = components['schemas']['CourierOfferInbox'];
 export type CourierOffer = components['schemas']['CourierOffer'];
+type SimulationConfig = components['schemas']['SimulationConfig'];
 type CourierView = components['schemas']['CourierView'];
 type GeoPoint = components['schemas']['GeoPoint'];
 type AvailabilityRequest = components['schemas']['AvailabilityRequest'];
@@ -98,6 +99,8 @@ async function post<T>(path: string, body?: unknown, headers?: Record<string, st
 }
 
 export const api = {
+  simulationConfig: (signal?: AbortSignal) =>
+    request<SimulationConfig>('/api/v1/map/config', { signal }),
   session: (signal?: AbortSignal) => request<SessionView>('/api/v1/auth/me', { signal }),
   async signIn(role: DemoRole) {
     const session = await post<SessionView>('/api/v1/auth/demo', { role } satisfies DemoLogin);

@@ -82,6 +82,7 @@ class OpenApiConfiguration {
                             boolean authenticated =
                                 !path.startsWith("/api/v1/auth/")
                                     && !path.equals("/api/v1/map/snapshot")
+                                    && !path.equals("/api/v1/map/config")
                                     && !path.startsWith("/api/v1/tracking/");
                             if (authenticated || unsafe) {
                               SecurityRequirement security =

@@ -44,10 +44,14 @@ public class DispatchCoordinator {
   private static final String ELIGIBLE_COURIER =
       """
       c.status='AVAILABLE' AND c.location_updated_at>=:fresh AND c.location_updated_at<=:future
-      AND (c.simulated OR EXISTS (
+      AND ((CAST(:context AS uuid) IS NULL AND c.simulated) OR (NOT c.simulated AND EXISTS (
         SELECT 1 FROM users u JOIN demo_contexts dc ON dc.id=u.context_id
-        WHERE u.courier_id=c.id AND u.context_id=:context AND u.role='COURIER'
-          AND u.expires_at>:now AND dc.expires_at>dc.created_at AND dc.expires_at>:now))
+        WHERE u.courier_id=c.id AND (CAST(:context AS uuid) IS NULL OR u.context_id=:context)
+          AND u.role='COURIER' AND u.visitor
+          AND u.expires_at>:now AND dc.expires_at>dc.created_at AND dc.expires_at>:now
+          AND (CAST(:context AS uuid) IS NOT NULL OR NOT EXISTS (
+            SELECT 1 FROM orders private_search WHERE private_search.visitor_context_id=u.context_id
+              AND private_search.status='SEARCHING')))))
       AND NOT EXISTS (SELECT 1 FROM offers history
         WHERE history.order_id=:order AND history.courier_id=c.id
           AND history.status IN ('ACCEPTED','REJECTED','EXPIRED'))
@@ -199,7 +203,7 @@ public class DispatchCoordinator {
         eligible(
                 jdbc.sql(
                     """
-        SELECT c.id FROM jsonb_to_recordset(CAST(:ranked AS jsonb))
+        SELECT c.id,c.simulated FROM jsonb_to_recordset(CAST(:ranked AS jsonb))
           AS r(id uuid,rank integer,recorded timestamptz,epoch bigint)
         JOIN couriers c ON c.id=r.id
         WHERE c.position_epoch=r.epoch AND c.location_updated_at=r.recorded AND
@@ -211,7 +215,10 @@ public class DispatchCoordinator {
                 order,
                 now)
             .param("ranked", mapper.writeValueAsString(rows))
-            .query(UUID.class)
+            .query(
+                (row, index) ->
+                    new SelectedCourier(
+                        row.getObject("id", UUID.class), row.getBoolean("simulated")))
             .optional();
     if (selected.isEmpty()) {
       retry(order.id(), now, false);
@@ -219,7 +226,12 @@ public class DispatchCoordinator {
     }
     now = clock.instant();
     if (!activation.allowsCreation() || !activeOrder(order.id(), now)) return -1;
-    UUID courierId = selected.get();
+    SelectedCourier selectedCourier = selected.get();
+    UUID courierId = selectedCourier.id();
+    if (order.visitorContextId() == null && !publicReservationAllowed(selectedCourier)) {
+      retry(order.id(), clock.instant(), false);
+      return 0;
+    }
     long durationMillis =
         ranked.stream()
             .filter(c -> c.id().equals(courierId))
@@ -263,6 +275,38 @@ public class DispatchCoordinator {
         .param("future", timestamp(now.plusSeconds(5)));
   }
 
+  private boolean publicReservationAllowed(SelectedCourier courier) {
+    if (courier.simulated()) return true;
+    var context =
+        jdbc.sql(
+                """
+        SELECT dc.id FROM users u JOIN demo_contexts dc ON dc.id=u.context_id
+        WHERE u.courier_id=:courier AND u.role='COURIER' AND u.visitor
+        FOR UPDATE OF dc SKIP LOCKED
+        """)
+            .param("courier", courier.id())
+            .query(UUID.class)
+            .optional();
+    if (context.isEmpty()) return false;
+    // A criação privada usa este mesmo lock de contexto. Se ele estiver ocupado, a reserva
+    // é adiada; após adquiri-lo, uma consulta nova enxerga qualquer criação já confirmada.
+    return jdbc.sql(
+            """
+        SELECT EXISTS (
+          SELECT 1 FROM users u JOIN demo_contexts dc ON dc.id=u.context_id
+          WHERE u.courier_id=:courier AND u.context_id=:context AND u.role='COURIER' AND u.visitor
+            AND u.expires_at>:now AND dc.expires_at>dc.created_at AND dc.expires_at>:now
+        ) AND NOT EXISTS (
+          SELECT 1 FROM orders WHERE visitor_context_id=:context AND status='SEARCHING'
+        )
+        """)
+        .param("courier", courier.id())
+        .param("context", context.get())
+        .param("now", timestamp(clock.instant()))
+        .query(Boolean.class)
+        .single();
+  }
+
   private boolean activeOrder(UUID id, Instant now) {
     return jdbc.sql(
                 "SELECT count(*) FROM orders o JOIN stores s ON s.id=o.store_id WHERE o.id=:id AND "
@@ -298,7 +342,9 @@ public class DispatchCoordinator {
           SELECT f.id FROM offers f JOIN orders o ON o.id=f.order_id JOIN stores s ON s.id=o.store_id
           JOIN couriers c ON c.id=f.courier_id
           WHERE f.courier_id=:courier AND f.status='PENDING' AND f.expires_at>:now
-            AND o.status='SEARCHING' AND (c.simulated OR o.visitor_context_id=:context) AND
+            AND o.status='SEARCHING'
+            AND ((o.visitor_context_id IS NULL AND s.simulated)
+              OR (NOT c.simulated AND o.visitor_context_id=:context)) AND
           """
                           + ACTIVE_ORDER)
                   .param("courier", user.courierId())
@@ -353,7 +399,8 @@ public class DispatchCoordinator {
                       .param("id", courier.id())
                       .query(Boolean.class)
                       .single();
-              if ((!simulated && !user.contextId().equals(order.visitorContextId()))
+              if ((order.visitorContextId() != null
+                      && (simulated || !user.contextId().equals(order.visitorContextId())))
                   || !activeOrder(order.id(), now)) throw missing();
               if (offer.status() != OfferStatus.PENDING)
                 throw conflict("OFFER_CLOSED", "Esta oferta já foi encerrada.");
@@ -469,6 +516,8 @@ public class DispatchCoordinator {
       UUID id, long epoch, Instant recordedAt, GeoPoint location, long durationMillis) {}
 
   private record RankedRow(UUID id, int rank, String recorded, long epoch) {}
+
+  private record SelectedCourier(UUID id, boolean simulated) {}
 
   private record OfferRow(
       UUID id,

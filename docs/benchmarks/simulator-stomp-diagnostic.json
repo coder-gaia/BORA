@@ -1,0 +1,125 @@
+{
+  "originalQualified": false,
+  "originalRawLogSha256": "5ea9e69e621a914d3262f9d08310741538c564470a6d7566950da8072c128825",
+  "historicalErrors": [
+    {
+      "at": "2026-10-19T15:02:42.738Z"
+    },
+    {
+      "at": "2026-10-19T15:02:58.921Z"
+    }
+  ],
+  "diagnosticScope": "Public read-only STOMP/viewport against unchanged measured containers, through a separate local proxy. No token/cookie/CONNECT native headers captured.",
+  "cases": [
+    {
+      "label": "ui-1-412",
+      "connections": [
+        {
+          "connection": 1,
+          "sendIntervalsMs": [],
+          "sendTimestamps": ["2026-10-19T15:32:10.596Z"],
+          "errors": [],
+          "closeTimestamps": ["2026-10-19T15:32:14.942Z", "2026-10-19T15:32:14.948Z"]
+        }
+      ]
+    },
+    {
+      "label": "ui-2-1440",
+      "connections": [
+        {
+          "connection": 2,
+          "sendIntervalsMs": [],
+          "sendTimestamps": ["2026-10-19T15:32:15.227Z"],
+          "errors": [],
+          "closeTimestamps": ["2026-10-19T15:32:19.614Z", "2026-10-19T15:32:19.621Z"]
+        }
+      ]
+    },
+    {
+      "label": "ui-3-412",
+      "connections": [
+        {
+          "connection": 3,
+          "sendIntervalsMs": [],
+          "sendTimestamps": ["2026-10-19T15:32:19.955Z"],
+          "errors": [],
+          "closeTimestamps": ["2026-10-19T15:32:24.377Z", "2026-10-19T15:32:24.388Z"]
+        }
+      ]
+    },
+    {
+      "label": "control-50ms",
+      "connections": [
+        {
+          "connection": 4,
+          "sendIntervalsMs": [62.024],
+          "sendTimestamps": ["2026-10-19T15:32:24.560Z", "2026-10-19T15:32:24.622Z"],
+          "errors": [
+            {
+              "at": "2026-10-19T15:32:24.629Z",
+              "message": "Failed to send message to ExecutorSubscribableChannel[clientInboundChannel]"
+            }
+          ],
+          "closeTimestamps": ["2026-10-19T15:32:24.633Z", "2026-10-19T15:32:24.634Z"]
+        }
+      ]
+    },
+    {
+      "label": "control-500ms",
+      "connections": [
+        {
+          "connection": 5,
+          "sendIntervalsMs": [509.363],
+          "sendTimestamps": ["2026-10-19T15:32:24.670Z", "2026-10-19T15:32:25.179Z"],
+          "errors": [],
+          "closeTimestamps": ["2026-10-19T15:32:27.164Z", "2026-10-19T15:32:27.171Z"]
+        }
+      ]
+    },
+    {
+      "label": "ui-4-mobile-resize",
+      "connections": [
+        {
+          "connection": 6,
+          "sendIntervalsMs": [250.524],
+          "sendTimestamps": ["2026-10-19T15:33:42.701Z", "2026-10-19T15:33:42.952Z"],
+          "errors": [
+            {
+              "at": "2026-10-19T15:33:42.974Z",
+              "message": "Failed to send message to ExecutorSubscribableChannel[clientInboundChannel]"
+            }
+          ],
+          "closeTimestamps": ["2026-10-19T15:33:42.977Z", "2026-10-19T15:33:42.978Z"]
+        },
+        {
+          "connection": 7,
+          "sendIntervalsMs": [],
+          "sendTimestamps": ["2026-10-19T15:33:44.427Z"],
+          "errors": [],
+          "closeTimestamps": ["2026-10-19T15:33:45.387Z", "2026-10-19T15:33:45.392Z"]
+        }
+      ]
+    },
+    {
+      "label": "ui-5-desktop-resize",
+      "connections": [
+        {
+          "connection": 8,
+          "sendIntervalsMs": [249.382, 257.224],
+          "sendTimestamps": [
+            "2026-10-19T15:33:45.664Z",
+            "2026-10-19T15:33:45.913Z",
+            "2026-10-19T15:33:46.170Z"
+          ],
+          "errors": [],
+          "closeTimestamps": ["2026-10-19T15:33:48.342Z", "2026-10-19T15:33:48.347Z"]
+        }
+      ]
+    }
+  ],
+  "conclusion": "Normal map resize reproduces the ERROR before closing, on a second viewport emitted 250 ms after the first. The 50 ms control fails and the 500 ms control passes. Initial synchronous snapshot work can compress the receive gap. Original frames were not captured, so historical attribution is not individually proven.",
+  "originalReportRetained": true,
+  "originalRawReportSha256": "195654b1974b856a857afb363bc1a270f4953dd0d07b2c39fe7f2524c7419c7d",
+  "publishedReport": "simulator-soak.json",
+  "publishedReportSha256": "594fcfc0e87158aab14e832d559e94426b254d8cab9762b88587872b7514085f"
+}

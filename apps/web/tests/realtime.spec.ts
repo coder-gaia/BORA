@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import type { components } from '../src/generated/api';
-import { chooseRole } from './demo';
+import { chooseRole, openOrder } from './demo';
 
 type Order = components['schemas']['OrderView'];
 
@@ -34,6 +34,20 @@ test('recebe mudanças pelo WebSocket e recupera o snapshot após perder a rede'
   const errors: string[] = [];
   const messages: string[] = [];
   let listQueries = 0;
+  let suppressListEvents = false;
+  await page.routeWebSocket('**/ws', (socket) => {
+    const server = socket.connectToServer();
+    server.onMessage((message) => {
+      // O simulador continua ativo. Isole somente a janela que detecta polling indevido.
+      if (
+        suppressListEvents &&
+        typeof message === 'string' &&
+        /"type"\s*:\s*"ORDERS_CHANGED"/.test(message)
+      )
+        return;
+      socket.send(message);
+    });
+  });
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('websocket', (socket) => {
     if (new URL(socket.url()).pathname !== '/ws') return;
@@ -66,13 +80,15 @@ test('recebe mudanças pelo WebSocket e recupera o snapshot após perder a rede'
     .toBe(true);
   await page.unroute(`**/api/v1/orders/${order.id}`);
   // Com a conexão ativa, o intervalo antigo de dois/três segundos deixa de consultar o servidor.
-  await page.waitForTimeout(500);
+  suppressListEvents = true;
+  await expect(page.getByRole('button', { name: 'Atualizar', exact: true })).toBeEnabled();
   const settledQueries = listQueries;
   await page.waitForTimeout(3_500);
   expect(listQueries).toBe(settledQueries);
+  suppressListEvents = false;
 
   const missed = await createOutsideInterface(page);
-  await page.locator(`.order-list-button[data-order-id="${missed.id}"]`).click();
+  await openOrder(page, missed.id);
   await expect(page.locator('.order-detail').getByRole('status')).toHaveText(
     'Procurando entregador',
   );
@@ -105,13 +121,13 @@ test('troca de papel e encerra sockets e dados privados ao sair', async ({ page 
   await chooseRole(page, 'Sou loja');
   await expect(page.locator('.connection-status')).toHaveAttribute('data-connection', 'connected');
   const order = await createOutsideInterface(page);
-  await page.locator(`.order-list-button[data-order-id="${order.id}"]`).click();
+  await openOrder(page, order.id);
   await expect(page.locator('.confirmation-code')).toHaveText(order.confirmationCode!);
   const oldSockets = [...sockets];
   await chooseRole(page, 'Operação');
   await expect(page.locator('.connection-status')).toHaveAttribute('data-connection', 'connected');
   await expect.poll(() => oldSockets.every((socket) => socket.closed)).toBe(true);
-  await page.locator(`.order-list-button[data-order-id="${order.id}"]`).click();
+  await openOrder(page, order.id);
   await expect(page.locator('.order-detail').getByRole('status')).toHaveText(
     'Procurando entregador',
   );

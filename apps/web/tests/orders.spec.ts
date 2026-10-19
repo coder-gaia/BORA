@@ -1,4 +1,4 @@
-import { chooseRole } from './demo';
+import { chooseRole, openOrder } from './demo';
 import { expect, test } from '@playwright/test';
 
 test('cria pedido privado, preserva o contexto na troca de papel e cancela pela operação', async ({
@@ -54,7 +54,7 @@ test('cria pedido privado, preserva o contexto na troca de papel e cancela pela 
     'aria-pressed',
     'true',
   );
-  await page.locator('.order-list-button').first().click();
+  await openOrder(page, created.id);
   await expect(page.getByRole('heading', { name: 'Detalhe do pedido' })).toBeVisible();
   await expect(page.getByText('Código de confirmação', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Cancelar pedido', exact: true }).click();

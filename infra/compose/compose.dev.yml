@@ -67,8 +67,10 @@ services:
       BORA_DISPATCH_REQUIRE_ACTIVATION: 'false'
       BORA_SESSION_SECURE: ${BORA_SESSION_SECURE:-false}
       BORA_CONFIRMATION_SECRET: ${BORA_CONFIRMATION_SECRET:-bora-local-development-only-confirmation-key}
+      BORA_SIMULATOR_KEY: ${BORA_SIMULATOR_KEY:-bora-local-development-only-simulator-key}
       BORA_GRAPH_ROOT: /var/lib/bora/routing
       SIM_SPEED: ${SIM_SPEED:-3}
+      SIM_SEED: ${SIM_SEED:-2026}
     volumes:
       - routing-graphs:/var/lib/bora/routing:ro
     mem_limit: 1536m
@@ -90,6 +92,42 @@ services:
       timeout: 5s
       retries: 24
       start_period: 20s
+
+  simulator:
+    image: bora-simulator:dev
+    build:
+      context: ../..
+      dockerfile: apps/simulator/Dockerfile
+    restart: unless-stopped
+    environment:
+      BORA_API_URL: http://api:8080
+      BORA_SIMULATOR_KEY: ${BORA_SIMULATOR_KEY:-bora-local-development-only-simulator-key}
+      BORA_SIMULATOR_INTERNAL_HTTP: ${BORA_SIMULATOR_INTERNAL_HTTP:-false}
+      SIM_SEED: ${SIM_SEED:-2026}
+      SIM_COURIER_COUNT: ${SIM_COURIER_COUNT:-120}
+      SIM_STORE_COUNT: ${SIM_STORE_COUNT:-40}
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 512m
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - --fail
+        - --silent
+        - http://127.0.0.1:8090/health
+      interval: 5s
+      timeout: 5s
+      retries: 36
+      start_period: 45s
 
   web:
     build:

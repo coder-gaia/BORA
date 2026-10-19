@@ -711,6 +711,18 @@
         "required": ["authenticated", "user"],
         "type": "object"
       },
+      "SimulationConfig": {
+        "properties": {
+          "simulationSpeed": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": ["simulationSpeed"],
+        "type": "object"
+      },
       "StoreView": {
         "properties": {
           "id": {
@@ -1351,6 +1363,26 @@
         ],
         "summary": "Consultar o trabalho do entregador",
         "tags": ["fulfillment-controller"]
+      }
+    },
+    "/api/v1/map/config": {
+      "get": {
+        "operationId": "getMapConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationConfig"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [],
+        "summary": "Consultar o fator de velocidade da simulação",
+        "tags": ["realtime-controller"]
       }
     },
     "/api/v1/map/snapshot": {

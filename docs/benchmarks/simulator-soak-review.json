@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "title": "Avaliação do ensaio do simulador de 19/10/2026",
+  "decision": {
+    "status": "Critérios de duração, atividade, fluxo e invariantes atendidos; perfil estrito reprovado.",
+    "scope": "Duração real, população ativa, fluxo de pedidos e invariantes de negócio observadas.",
+    "doesNotOverridePrimaryReport": true,
+    "doesNotQualifyRealtimeOrErrorFreeFullProfile": true,
+    "reason": "As evidências sustentam o critério de negócio originalmente definido, enquanto o observador estrito reprova corretamente a presença de dois ERROR STOMP. As duas conclusões têm escopos diferentes e devem ser publicadas juntas."
+  },
+  "primaryReport": {
+    "path": "apps/simulator/target/soak.json",
+    "sha256": "195654b1974b856a857afb363bc1a270f4953dd0d07b2c39fe7f2524c7419c7d",
+    "immutableReviewCopy": "%TEMP%/bora-m08-soak-review/simulator-soak-strict-original.json",
+    "qualified": false,
+    "failure": "Os logs das APIs registraram falha de persistência ou progresso.",
+    "interpretation": "A mensagem do observador é genérica: qualquer ocorrência de ERROR aciona essa mesma falha. Os dois registros encontrados são do StompSubProtocolHandler; o relatório não demonstra falha de persistência ou de progresso por essa mensagem, isoladamente.",
+    "preservation": "O arquivo primário e os critérios do observador foram preservados. Esta análise não altera qualified, contadores, amostras nem parâmetros do ensaio."
+  },
+  "originalAcceptanceCriterion": {
+    "source": "Critérios de aceitação do simulador.",
+    "text": "depois de 1 hora ligado, a cidade mantém cerca de 120 entregadores ativos, pedidos fluindo e nenhum erro de invariante nos logs.",
+    "criteria": [
+      {
+        "criterion": "Uma hora real de funcionamento",
+        "result": "Demonstrado pelo intervalo monotônico de 3601,153 segundos e por observações que cobrem 3600,003 segundos. O fator SIM_SPEED não acelerou o relógio do ensaio."
+      },
+      {
+        "criterion": "Cerca de 120 entregadores ativos",
+        "result": "120 entregadores online e com posição recente em todas as 644 observações; mínimos registrados de online e fresh iguais a 120."
+      },
+      {
+        "criterion": "Pedidos fluindo",
+        "result": "O banco registrou 1083 novos pedidos e 1063 novas entregas concluídas entre a primeira e a última observação. O simulador teve 211808 posições aceitas adicionais no mesmo intervalo."
+      },
+      {
+        "criterion": "Nenhum erro de invariante observado",
+        "result": "Máximo zero nas oito invariantes de reserva, vínculo, estado e privacidade verificadas em todas as 644 observações; os padrões de falha de persistência, progresso, scheduler, deadlock e pool tiveram contagem zero. Os dois ERROR STOMP permanecem explicitamente registrados e não são classificados como zero ERROR."
+      }
+    ]
+  },
+  "measurements": {
+    "startedAt": "2026-10-19T14:26:38.414610+00:00",
+    "finishedAt": "2026-10-19T15:26:40.365763+00:00",
+    "elapsedMonotonicSeconds": 3601.153,
+    "firstObservationAt": "2026-10-19T14:26:39.606449+00:00",
+    "lastObservationAt": "2026-10-19T15:26:39.609631+00:00",
+    "observationsChecked": 644,
+    "samplesRetainedAfterDecimation": 55,
+    "decimation": "O observador verificou cada observação e calculou os mínimos e máximos antes de salvar aproximadamente um ponto por minuto e o último ponto.",
+    "minimumOnline": 120,
+    "minimumFresh": 120,
+    "ordersCreated": {
+      "first": 763,
+      "last": 1846,
+      "delta": 1083
+    },
+    "ordersDelivered": {
+      "first": 701,
+      "last": 1764,
+      "delta": 1063
+    },
+    "acceptedPositions": {
+      "first": 7678,
+      "last": 219486,
+      "delta": 211808,
+      "interpretation": "219486 é o contador cumulativo desde a partida do simulador, anterior ao início do ensaio. A quantidade desta janela é o delta 211808."
+    },
+    "maximumInvariantViolations": {
+      "busyWithoutOrder": 0,
+      "orderWithoutBusyCourier": 0,
+      "offeredWithoutPending": 0,
+      "pendingWithoutOffered": 0,
+      "pendingWithoutSearching": 0,
+      "multipleOrders": 0,
+      "privateAssignedToSimulator": 0,
+      "publicWithConfirmation": 0
+    },
+    "fatalSimulatorCounters": {
+      "fatalActorFailures": 0,
+      "invalidApiResponses": 0,
+      "unexpectedHttpErrors": 0,
+      "visitorAssignmentsUnsupported": 0,
+      "http500": 0,
+      "http502": 0,
+      "http503": 0,
+      "http504": 0,
+      "networkFailures": 0,
+      "clockRefreshFailures": 0,
+      "apiUnavailable": 0
+    },
+    "counterRepresentation": "Os contadores fatais ausentes no mapa esparso do simulador equivalem a zero; essa é a representação adotada pelo observador. Conflitos HTTP409 esperados continuam distintos de falhas fatais."
+  },
+  "comparability": {
+    "sourceSha256Recorded": "52567c791516933a72066a8cd59b443f2d65ff63ce00df91962773522fad7ebd",
+    "sourceSha256RecomputedDuringReview": "52567c791516933a72066a8cd59b443f2d65ff63ce00df91962773522fad7ebd",
+    "sourceScope": "Arquivos de apps/api e apps/simulator, excluindo target e node_modules, conforme algoritmo do observador.",
+    "containerMetadataBeforeEqualsAfter": true,
+    "oomOrRestarts": false,
+    "sharedCpuSet": "0,1",
+    "apiImage": "sha256:121efdfd9893a462ff5481b9566bb3fa29bcda0d2d3cdc10708e9ea785da26ad",
+    "simulatorImage": "sha256:840fab08524d06ebb9aaff7dd31e16609e55b28f46433fe52dfab6965b7dd444",
+    "httpConcurrencyLimit": 4,
+    "hardware": "Docker Desktop local, arquitetura x86_64; todos os serviços medidos compartilham os mesmos dois processadores lógicos. Esta evidência não mede desempenho ARM64 nem os créditos de CPU da VM Azure.",
+    "runtimeMutatedByThisReview": false
+  },
+  "websocketErrors": {
+    "historicalCount": 2,
+    "historicalService": "api1",
+    "historicalTimesUtc": ["2026-10-19T15:02:42.738Z", "2026-10-19T15:02:58.921Z"],
+    "logger": "org.springframework.web.socket.messaging.StompSubProtocolHandler",
+    "signature": "Failed to send message to MessageChannel / Failed to send message to ExecutorSubscribableChannel[clientInboundChannel]",
+    "historicalEvidenceLimit": "Não foram capturados os frames das duas sessões históricas. A reprodução posterior demonstra um mecanismo real com a mesma assinatura, mas não prova individualmente a causa de cada registro histórico.",
+    "subsequentReproduction": {
+      "sourceOrContainerChangesRequired": false,
+      "coldOpenControlsPassed": 3,
+      "viewportControl50Milliseconds": "Reproduziu ERROR e fechamento do socket.",
+      "viewportControl500Milliseconds": "Passou sem ERROR.",
+      "mobileResize": "A UI emitiu dois SEND de viewport PUBLIC válidos separados por aproximadamente 250 ms; recebeu ERROR antes do fechamento do contexto e reconectou. O ERROR no cliente ocorreu em 2026-10-19T15:33:42.977Z; o contexto só foi fechado em 15:33:45.380Z.",
+      "serverReproduction": "A API2 registrou a mesma assinatura em 2026-10-19T15:33:42.970Z.",
+      "sourceMechanism": "RealtimeSessions.subscribe consulta o snapshot sincronamente no interceptor de entrada. RealtimeSessions.viewport aplica intervalo mínimo de 200 ms no momento do processamento. A espera do snapshot pode comprimir o intervalo efetivamente processado entre mensagens emitidas pelo cliente a aproximadamente 250 ms.",
+      "correctionScope": "O envio inicial e a temporização de viewport precisam de correção no cliente experimental de mapa e regressão com a API real. A API e o simulador medidos permanecem inalterados.",
+      "evidence": [
+        {
+          "path": "%TEMP%/bora-m08-stomp-diagnostic/evidence/client-results.json",
+          "sha256": "4bb8b933e6365e90fa3d7b94f80d14397060ee349e4528f3ad6b926c3dd9ef15"
+        },
+        {
+          "path": "%TEMP%/bora-m08-stomp-diagnostic/evidence/resize-results.json",
+          "sha256": "f1bbd7a22b3a4350beae2f8bcf1ad5698fa6a60b4303f2718d69e2430fe554a8"
+        },
+        {
+          "path": "%TEMP%/bora-m08-stomp-diagnostic/evidence/api2-reproduction.log",
+          "sha256": "7bf60006d690e6a96f2c62cbfd43e4cc03315afa44f57febee8615d5947d11ce"
+        }
+      ],
+      "publishedEvidence": "simulator-stomp-diagnostic.json"
+    }
+  },
+  "publication": {
+    "formattedCopyPath": "docs/benchmarks/simulator-soak.json",
+    "formattedCopySha256": "594fcfc0e87158aab14e832d559e94426b254d8cab9762b88587872b7514085f",
+    "formattedCopyBytes": 206791,
+    "dataMustEqualOriginal": true,
+    "note": "A cópia publicada recebeu formatação Prettier e preserva exatamente os mesmos dados e qualified=false. O SHA em primaryReport identifica os bytes do original bruto, preservado no target e no TEMP; o SHA desta seção identifica separadamente os bytes da cópia formatada."
+  },
+  "limits": [
+    "O observador estrito permanece reprovado e não houve zero ERROR na janela.",
+    "A reprodução identifica um mecanismo real com a mesma assinatura, sem prova individual dos dois eventos históricos.",
+    "Esta avaliação cobre o simulador; a correção do cliente de mapa exige regressão própria.",
+    "Mudanças futuras na API ou no simulador não são qualificadas automaticamente por estes dados."
+  ]
+}

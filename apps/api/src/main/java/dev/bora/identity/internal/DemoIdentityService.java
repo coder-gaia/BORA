@@ -55,6 +55,88 @@ class DemoIdentityService {
     return new Login(user.principal(), user.view());
   }
 
+  Login simulatorLogin(SimulatorDirectory.ActorIdentity actor) {
+    Instant now = clock.instant();
+    Instant expires = now.plus(IDLE_TIMEOUT);
+    jdbc.sql(
+            """
+        INSERT INTO demo_contexts(id,created_at,expires_at) VALUES(:id,:now,:expires)
+        ON CONFLICT(id) DO UPDATE SET expires_at=GREATEST(demo_contexts.expires_at,EXCLUDED.expires_at)
+        """)
+        .param("id", actor.contextId())
+        .param("now", timestamp(now))
+        .param("expires", timestamp(expires))
+        .update();
+    if (actor.role() == DemoRole.COURIER) {
+      jdbc.sql(
+              """
+          INSERT INTO couriers(id,name,status,simulated) VALUES(:id,:name,'OFFLINE',true)
+          ON CONFLICT(id) DO NOTHING
+          """)
+          .param("id", actor.courierId())
+          .param("name", actor.name())
+          .update();
+      boolean simulated =
+          jdbc.sql("SELECT simulated FROM couriers WHERE id=:id")
+              .param("id", actor.courierId())
+              .query(Boolean.class)
+              .single();
+      if (!simulated) {
+        throw simulatorUnavailable();
+      }
+    } else {
+      boolean simulated =
+          jdbc.sql("SELECT simulated FROM stores WHERE id=:id FOR UPDATE")
+              .param("id", actor.storeId())
+              .query(Boolean.class)
+              .optional()
+              .orElse(false);
+      if (!simulated) {
+        throw simulatorUnavailable();
+      }
+      // As lojas fictícias passam a usar o ponto de acesso da via sem mover uma coleta ativa.
+      jdbc.sql(
+              """
+          UPDATE stores SET location=ST_SetSRID(ST_MakePoint(:lon,:lat),4326)::geography
+          WHERE id=:id AND NOT EXISTS (SELECT 1 FROM orders WHERE store_id=:id
+            AND status IN ('SEARCHING','ASSIGNED','AT_STORE','PICKED_UP'))
+          """)
+          .param("id", actor.storeId())
+          .param("lon", actor.position().longitude())
+          .param("lat", actor.position().latitude())
+          .update();
+    }
+    User user =
+        jdbc.sql(
+                """
+        INSERT INTO users(id,context_id,display_name,role,store_id,courier_id,visitor,expires_at)
+        VALUES(:id,:context,:name,:role,:store,:courier,false,:expires)
+        ON CONFLICT(id) DO UPDATE SET expires_at=GREATEST(users.expires_at,EXCLUDED.expires_at)
+        WHERE NOT users.visitor AND users.context_id=EXCLUDED.context_id AND users.role=EXCLUDED.role
+          AND users.store_id IS NOT DISTINCT FROM EXCLUDED.store_id
+          AND users.courier_id IS NOT DISTINCT FROM EXCLUDED.courier_id
+        RETURNING *
+        """)
+            .param("id", actor.userId())
+            .param("context", actor.contextId())
+            .param("name", actor.name())
+            .param("role", actor.role().name())
+            .param("store", actor.storeId())
+            .param("courier", actor.courierId())
+            .param("expires", timestamp(expires))
+            .query(DemoIdentityService::readUser)
+            .optional()
+            .orElseThrow(DemoIdentityService::simulatorUnavailable);
+    return new Login(user.principal(), user.view());
+  }
+
+  private static ApiException simulatorUnavailable() {
+    return new ApiException(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        "SIMULATOR_UNAVAILABLE",
+        "A identidade do simulador ainda não está pronta.");
+  }
+
   Optional<DemoUserView> touch(DemoPrincipal principal) {
     Instant now = clock.instant();
     Optional<User> result =
@@ -114,7 +196,9 @@ class DemoIdentityService {
             """
         WITH locked_context AS MATERIALIZED (
           SELECT id,expires_at FROM demo_contexts
-                  WHERE id=:id AND expires_at>created_at AND expires_at>:now FOR UPDATE
+                  WHERE id=:id AND expires_at>created_at AND expires_at>:now
+                    AND NOT EXISTS (SELECT 1 FROM users u WHERE u.context_id=:id AND NOT u.visitor)
+                  FOR UPDATE
         ) SELECT id FROM locked_context WHERE expires_at>clock_timestamp()
         """)
         .param("id", context)

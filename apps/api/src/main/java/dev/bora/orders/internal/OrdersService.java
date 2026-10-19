@@ -126,6 +126,17 @@ class OrdersService implements OrderSnapshots {
     // O limitador usa uma conexão própria e deve terminar antes do lock transacional.
     limits.checkOrderCreation(user.contextId());
     StoreView store = stores.find(user.storeId());
+    boolean publicSimulation = !user.visitor();
+    if (publicSimulation
+        && !jdbc.sql("SELECT simulated FROM stores WHERE id=:id")
+            .param("id", store.id())
+            .query(Boolean.class)
+            .single()) {
+      throw failure(
+          HttpStatus.FORBIDDEN,
+          "SIMULATOR_STORE_REQUIRED",
+          "A identidade interna exige uma loja simulada.");
+    }
     if (!stores.covers(store.serviceAreaId(), dropoff)) {
       throw failure(
           HttpStatus.UNPROCESSABLE_ENTITY,
@@ -168,7 +179,7 @@ class OrdersService implements OrderSnapshots {
                   .param("context", user.contextId())
                   .query(Long.class)
                   .single();
-          if (active >= 5) {
+          if (user.visitor() && active >= 5) {
             throw failure(
                 HttpStatus.TOO_MANY_REQUESTS,
                 "ACTIVE_ORDER_LIMIT",
@@ -182,11 +193,11 @@ class OrdersService implements OrderSnapshots {
                   publicCode(),
                   store.id(),
                   GEOMETRY.createPoint(new Coordinate(dropoff.longitude(), dropoff.latitude())),
-                  codes.hash(id),
+                  publicSimulation ? null : codes.hash(id),
                   now,
                   now.plusSeconds(1_800),
-                  user.contextId(),
-                  user.userId()));
+                  publicSimulation ? null : user.contextId(),
+                  publicSimulation ? null : user.userId()));
           entityManager.flush();
           entityManager.persist(
               new OrderEventEntity(
@@ -294,7 +305,9 @@ class OrdersService implements OrderSnapshots {
                         row.getLong("order_version")))
             .list();
     String code =
-        user.role() == DemoRole.STORE && user.userId().equals(record.ownerUserId())
+        user.visitor()
+                && user.role() == DemoRole.STORE
+                && user.userId().equals(record.ownerUserId())
             ? codes.code(id)
             : null;
     return new OrderView(
@@ -318,7 +331,9 @@ class OrdersService implements OrderSnapshots {
           status -> {
             OrderRecord record = findVisible(user, id);
             if (user.role() == DemoRole.STORE
-                && (!user.contextId().equals(record.contextId())
+                && (!(user.visitor()
+                        ? user.contextId().equals(record.contextId())
+                        : record.contextId() == null)
                     || !record.summary().store().id().equals(user.storeId()))) {
               throw notFound();
             }
@@ -380,7 +395,7 @@ class OrdersService implements OrderSnapshots {
           "Esta chave de idempotência já foi usada com outro destino.");
     }
     OrderView saved = mapper.readValue(existing.get().response(), OrderView.class);
-    return saved.withConfirmationCode(codes.code(saved.id()));
+    return saved.withConfirmationCode(user.visitor() ? codes.code(saved.id()) : null);
   }
 
   private void lockContext(UUID context) {
