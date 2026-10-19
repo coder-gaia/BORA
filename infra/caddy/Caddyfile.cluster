@@ -1,0 +1,20 @@
+{
+	admin localhost:2019
+}
+
+:80 {
+	@api path /api /api/* /ws /ws/* /actuator/health /actuator/health/*
+	handle @api {
+		reverse_proxy api1:8080 api2:8080 {
+			lb_policy round_robin
+			lb_try_duration 5s
+			health_uri /actuator/health/readiness
+			health_interval 1s
+			health_timeout 2s
+		}
+	}
+
+	handle {
+		reverse_proxy web:5173
+	}
+}

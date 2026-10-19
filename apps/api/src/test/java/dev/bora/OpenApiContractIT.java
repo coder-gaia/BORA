@@ -74,6 +74,9 @@ class OpenApiContractIT {
               "/api/v1/auth/csrf",
               "/api/v1/auth/demo",
               "/api/v1/auth/logout",
+              "/api/v1/map/snapshot",
+              "/api/v1/ops/snapshot",
+              "/api/v1/tracking/{code}",
               "/api/v1/stores/me",
               "/api/v1/orders",
               "/api/v1/orders/{id}",
@@ -106,6 +109,18 @@ class OpenApiContractIT {
           .isTrue();
       assertThat(paths.path("/api/v1/auth/csrf").path("get").path("parameters").isEmpty()).isTrue();
       assertThat(paths.path("/api/v1/auth/me").path("get").path("security").isEmpty()).isTrue();
+      assertThat(paths.path("/api/v1/map/snapshot").path("get").path("security").isEmpty())
+          .isTrue();
+      assertThat(paths.path("/api/v1/tracking/{code}").path("get").path("security").isEmpty())
+          .isTrue();
+      assertThat(
+              paths
+                  .path("/api/v1/ops/snapshot")
+                  .path("get")
+                  .path("security")
+                  .get(0)
+                  .has("sessionCookie"))
+          .isTrue();
       JsonNode security = paths.path("/api/v1/orders").path("post").path("security");
       assertThat(security.size()).isEqualTo(1);
       assertThat(security.get(0).has("sessionCookie")).isTrue();

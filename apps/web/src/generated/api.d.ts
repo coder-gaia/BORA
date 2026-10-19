@@ -173,6 +173,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/map/snapshot': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Consultar posições simuladas na área visível */
+    get: operations['getPublicMapSnapshot'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/offers/{id}/accept': {
     parameters: {
       query?: never;
@@ -218,6 +235,23 @@ export interface paths {
     put?: never;
     /** Redistribuir um pedido da operação */
     post: operations['reassignOrder'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/ops/snapshot': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Consultar posições públicas e do próprio contexto */
+    get: operations['getOperationsSnapshot'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -328,6 +362,23 @@ export interface paths {
     };
     /** Consultar a loja autenticada */
     get: operations['getCurrentStore'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/tracking/{code}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Consultar o progresso limitado de um link de rastreio */
+    get: operations['getTracking'];
     put?: never;
     post?: never;
     delete?: never;
@@ -468,6 +519,11 @@ export interface components {
       /** Formato: double */
       longitude: number;
     };
+    MapFrame: {
+      points: unknown[][];
+      /** Formato: date-time */
+      serverTime: string;
+    };
     OrderEventView: {
       fromStatus?:
         ('ASSIGNED' | 'AT_STORE' | 'CANCELED' | 'DELIVERED' | 'PICKED_UP' | 'SEARCHING') | null;
@@ -563,6 +619,18 @@ export interface components {
       name: string;
       /** Formato: uuid */
       serviceAreaId: string;
+    };
+    TrackingSnapshot: {
+      courierPosition?: components['schemas']['GeoPoint'] | null;
+      dropoff: components['schemas']['GeoPoint'];
+      pickup: components['schemas']['GeoPoint'];
+      /** Formato: date-time */
+      serverTime: string;
+      /** @enum {string} */
+      status: 'ASSIGNED' | 'AT_STORE' | 'CANCELED' | 'DELIVERED' | 'PICKED_UP' | 'SEARCHING';
+      storeName: string;
+      /** Formato: int64 */
+      version: number;
     };
   };
   responses: never;
@@ -1039,6 +1107,40 @@ export interface operations {
       };
     };
   };
+  getPublicMapSnapshot: {
+    parameters: {
+      query: {
+        east: number;
+        north: number;
+        south: number;
+        west: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          '*/*': components['schemas']['MapFrame'];
+        };
+      };
+      /** @description Confira os limites da área visível. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
   acceptOffer: {
     parameters: {
       query?: never;
@@ -1229,6 +1331,58 @@ export interface operations {
       };
       /** @description A versão ou a etapa do pedido mudou. Consulte o pedido novamente. */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
+  getOperationsSnapshot: {
+    parameters: {
+      query: {
+        east: number;
+        north: number;
+        south: number;
+        west: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          '*/*': components['schemas']['MapFrame'];
+        };
+      };
+      /** @description Confira os limites da área visível. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Entre na demonstração para continuar. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O papel ou a sessão não permite esta ação. */
+      403: {
         headers: {
           [name: string]: unknown;
         };
@@ -1689,6 +1843,37 @@ export interface operations {
         };
       };
       /** @description O recurso não existe ou não está visível neste contexto. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
+  getTracking: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        code: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          '*/*': components['schemas']['TrackingSnapshot'];
+        };
+      };
+      /** @description O link de rastreio não existe. */
       404: {
         headers: {
           [name: string]: unknown;

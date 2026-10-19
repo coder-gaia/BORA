@@ -4,6 +4,7 @@ import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CourierOffer } from '@/components/courier-offer';
 import { api, type CourierWorkView, type DemoUserView, type PositionReceipt } from '@/lib/api';
+import { useOrderUpdates, useRealtime } from '@/hooks/use-realtime';
 
 const courierStatuses: Record<string, string> = {
   OFFLINE: 'Offline',
@@ -37,6 +38,7 @@ function Failure({ error }: { error: Error | null }) {
 
 export function CourierWorkspace({ user }: { user: DemoUserView }) {
   const queryClient = useQueryClient();
+  const { connected } = useRealtime();
   const [inputLatitude, setLatitude] = useState<string | null>(null);
   const [inputLongitude, setLongitude] = useState<string | null>(null);
   const [confirmationCode, setConfirmationCode] = useState('');
@@ -45,20 +47,26 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
   const [notice, setNotice] = useState('');
   const work = useQuery({
     queryKey: ['courier-work', user.id],
-    queryFn: api.courierWork,
+    queryFn: ({ signal }) => api.courierWork(signal),
     refetchInterval(query) {
       const status = query.state.data?.courier.status;
-      return status && (status !== 'OFFLINE' || receipt !== null) ? 2_000 : false;
+      const pendingPosition =
+        receipt?.accepted &&
+        receipt.latestRecordedAt &&
+        Date.parse(query.state.data?.courier.locationUpdatedAt ?? '') <
+          Date.parse(receipt.latestRecordedAt);
+      return status && ((!connected && status !== 'OFFLINE') || pendingPosition) ? 2_000 : false;
     },
     refetchIntervalInBackground: false,
   });
   const courier = work.data?.courier;
   const order = work.data?.order;
+  useOrderUpdates(order?.id);
   const latitude = inputLatitude ?? String(courier?.location?.latitude ?? -23.5614);
   const longitude = inputLongitude ?? String(courier?.location?.longitude ?? -46.6559);
   const route = useQuery({
     queryKey: ['courier-route', user.id, order?.id, order?.status, courier?.locationUpdatedAt],
-    queryFn: api.courierRoute,
+    queryFn: ({ signal }) => api.courierRoute(signal),
     enabled: Boolean(order && courier?.location),
   });
 

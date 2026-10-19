@@ -209,3 +209,8 @@ O relatório informa sucessos, falhas e latência p95. A verificação exige HTT
 e readiness com estado `UP`; qualquer falha resulta em código de saída diferente de zero.
 Acrescente `--demo-session` para criar uma sessão de demonstração e exigir a mesma identidade
 durante toda a medição.
+
+## Licença
+
+O código do Bora está disponível sob a [licença MIT](LICENSE).
+Os dados OpenStreetMap mantêm sua [licença e atribuição próprias](infra/osm/NOTICE.md).

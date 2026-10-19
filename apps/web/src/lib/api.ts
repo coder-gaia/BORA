@@ -50,7 +50,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       ...options,
       credentials: 'same-origin',
       cache: 'no-store',
-      signal: controller.signal,
+      signal: options.signal
+        ? AbortSignal.any([options.signal, controller.signal])
+        : controller.signal,
       headers: { Accept: 'application/json', ...options.headers },
     });
     if (!response.ok) {
@@ -72,6 +74,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     }
     return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
   } catch (error) {
+    if (options.signal?.aborted) throw error;
     if (error instanceof ApiError) throw error;
     throw new Error('A conexão foi interrompida. Confira sua rede e tente novamente.', {
       cause: error,
@@ -81,8 +84,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 }
 
-export async function getCsrf() {
-  return request<CsrfView>('/api/v1/auth/csrf');
+export async function getCsrf(signal?: AbortSignal) {
+  return request<CsrfView>('/api/v1/auth/csrf', { signal });
 }
 
 async function post<T>(path: string, body?: unknown, headers?: Record<string, string>) {
@@ -95,7 +98,7 @@ async function post<T>(path: string, body?: unknown, headers?: Record<string, st
 }
 
 export const api = {
-  session: () => request<SessionView>('/api/v1/auth/me'),
+  session: (signal?: AbortSignal) => request<SessionView>('/api/v1/auth/me', { signal }),
   async signIn(role: DemoRole) {
     const session = await post<SessionView>('/api/v1/auth/demo', { role } satisfies DemoLogin);
     await getCsrf();
@@ -106,9 +109,11 @@ export const api = {
     await getCsrf();
     return api.session();
   },
-  store: () => request<StoreView>('/api/v1/stores/me'),
-  orders: (page: number) => request<OrderPage>(`/api/v1/orders?page=${page}&size=10`),
-  order: (id: string) => request<OrderView>(`/api/v1/orders/${encodeURIComponent(id)}`),
+  store: (signal?: AbortSignal) => request<StoreView>('/api/v1/stores/me', { signal }),
+  orders: (page: number, signal?: AbortSignal) =>
+    request<OrderPage>(`/api/v1/orders?page=${page}&size=10`, { signal }),
+  order: (id: string, signal?: AbortSignal) =>
+    request<OrderView>(`/api/v1/orders/${encodeURIComponent(id)}`, { signal }),
   createOrder: (dropoff: NonNullable<CreateOrderRequest['dropoff']>, key: string) =>
     post<OrderView>('/api/v1/orders', { dropoff } satisfies CreateOrderRequest, {
       'Idempotency-Key': key,
@@ -117,9 +122,12 @@ export const api = {
     post<OrderView>(`/api/v1/orders/${encodeURIComponent(id)}/cancel`, {
       expectedVersion,
     } satisfies CancelOrderRequest),
-  courierWork: () => request<CourierWorkView>('/api/v1/courier/work'),
-  courierRoute: () => request<CourierRouteView>('/api/v1/courier/route'),
-  courierOffer: () => request<CourierOfferInbox>('/api/v1/courier/offer'),
+  courierWork: (signal?: AbortSignal) =>
+    request<CourierWorkView>('/api/v1/courier/work', { signal }),
+  courierRoute: (signal?: AbortSignal) =>
+    request<CourierRouteView>('/api/v1/courier/route', { signal }),
+  courierOffer: (signal?: AbortSignal) =>
+    request<CourierOfferInbox>('/api/v1/courier/offer', { signal }),
   acceptOffer: (id: string) => post<void>(`/api/v1/offers/${encodeURIComponent(id)}/accept`),
   rejectOffer: (id: string) => post<void>(`/api/v1/offers/${encodeURIComponent(id)}/reject`),
   reassignOrder: (id: string, expectedVersion: number) =>

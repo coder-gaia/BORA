@@ -70,6 +70,7 @@ class OpenApiConfiguration {
       nullable(components, "CourierView", "location", "locationUpdatedAt");
       nullable(components, "CourierWorkView", "order");
       nullable(components, "AssignedOrderView", "atStoreAt", "pickedUpAt");
+      nullable(components, "TrackingSnapshot", "courierPosition");
 
       api.getPaths()
           .forEach(
@@ -78,7 +79,10 @@ class OpenApiConfiguration {
                       .forEach(
                           (method, operation) -> {
                             boolean unsafe = method != PathItem.HttpMethod.GET;
-                            boolean authenticated = !path.startsWith("/api/v1/auth/");
+                            boolean authenticated =
+                                !path.startsWith("/api/v1/auth/")
+                                    && !path.equals("/api/v1/map/snapshot")
+                                    && !path.startsWith("/api/v1/tracking/");
                             if (authenticated || unsafe) {
                               SecurityRequirement security =
                                   new SecurityRequirement().addList("sessionCookie");
@@ -104,6 +108,16 @@ class OpenApiConfiguration {
                                   "O token CSRF ou o papel não permite esta ação.");
                             }
                             switch (operation.getOperationId()) {
+                              case "getPublicMapSnapshot", "getOperationsSnapshot" ->
+                                  error(
+                                      operation.getResponses(),
+                                      "400",
+                                      "Confira os limites da área visível.");
+                              case "getTracking" ->
+                                  error(
+                                      operation.getResponses(),
+                                      "404",
+                                      "O link de rastreio não existe.");
                               case "enterDemo" -> {
                                 error(
                                     operation.getResponses(), "400", "Confira o papel informado.");

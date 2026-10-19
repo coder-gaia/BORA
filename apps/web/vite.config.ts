@@ -21,6 +21,7 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/api': { target },
         '/actuator/health': { target },
+        '/ws': { target, ws: true },
       },
     },
   };

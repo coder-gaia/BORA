@@ -65,3 +65,6 @@ e use `docker compose --env-file .env -f infra/compose/compose.dev.yml ...`.
 
 Os volumes preservam os dados entre reinícios. O comando `down --volumes` apaga os dados locais
 e só deve ser usado quando essa reinicialização for desejada.
+
+Para testar a comunicação entre duas APIs por trás do Caddy, use o
+[ambiente de tempo real](tempo-real.md#ambiente-local-com-duas-apis).

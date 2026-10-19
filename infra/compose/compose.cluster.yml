@@ -1,0 +1,69 @@
+name: bora-cluster
+
+services:
+  graph-import:
+    extends:
+      file: compose.dev.yml
+      service: graph-import
+
+  db:
+    extends:
+      file: compose.dev.yml
+      service: db
+    ports: !override
+      - '127.0.0.1:${CLUSTER_POSTGRES_PORT:-15433}:5432'
+
+  api1:
+    extends:
+      file: compose.dev.yml
+      service: api
+    ports: !override
+      - '127.0.0.1:${CLUSTER_API1_PORT:-18081}:8080'
+
+  api2:
+    extends:
+      file: compose.dev.yml
+      service: api
+    ports: !override
+      - '127.0.0.1:${CLUSTER_API2_PORT:-18082}:8080'
+
+  web:
+    extends:
+      file: compose.dev.yml
+      service: web
+    environment:
+      API_PROXY_TARGET: http://api1:8080
+    ports: !reset []
+    depends_on: !override
+      api1:
+        condition: service_healthy
+      api2:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+    ports:
+      - '127.0.0.1:${CLUSTER_HTTP_PORT:-18080}:80'
+    volumes:
+      - ../caddy/Caddyfile.cluster:/etc/caddy/Caddyfile:ro
+    depends_on:
+      api1:
+        condition: service_healthy
+      api2:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --quiet
+        - --output-document=/dev/null
+        - http://127.0.0.1:2019/config/
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  routing-graphs:
+  postgres-data:

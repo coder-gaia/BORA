@@ -126,7 +126,12 @@ somente depois de validar APIs e web da mesma versão. A limpeza de reservas con
 durante a atualização e após recuperar a versão anterior. Consulte o
 [guia de publicação](deploy.md).
 
-O cliente consulta a própria oferta a cada dois segundos enquanto a página está visível. O
-horário do servidor acompanha a resposta para que a contagem não dependa do ajuste do relógio
+O cliente recebe ofertas e mudanças de pedidos por STOMP, com sessão compartilhada e
+autorização do recurso em cada assinatura. As duas APIs recebem avisos transacionais do
+PostgreSQL e consultam o estado persistido. Reconexão e reconciliação recuperam mudanças
+perdidas; a consulta HTTP periódica continua disponível durante a desconexão. Consulte
+[tempo real](tempo-real.md).
+
+O horário do servidor acompanha a oferta para que a contagem não dependa do ajuste do relógio
 do dispositivo. As transições continuam validadas no servidor. Consulte os fluxos e limites em
 [entregadores e posições](entregadores-e-posicoes.md).

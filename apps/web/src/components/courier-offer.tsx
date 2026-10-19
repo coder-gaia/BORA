@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { api, type CourierOffer as Offer } from '@/lib/api';
+import { useRealtime } from '@/hooks/use-realtime';
 
 function OfferDetails({
   offer,
@@ -87,15 +88,23 @@ export function CourierOffer({
   onChanged: () => Promise<void>;
 }) {
   const [notice, setNotice] = useState('');
+  const { connected } = useRealtime();
+  const queries = useQueryClient();
   const enabled = status === 'AVAILABLE' || status === 'OFFERED';
   const inbox = useQuery({
     queryKey: ['courier-offer', userId],
-    async queryFn() {
-      const value = await api.courierOffer();
-      return { ...value, receivedAt: performance.now() };
+    async queryFn({ signal }) {
+      const value = await api.courierOffer(signal);
+      const current = queries.getQueryData<typeof value & { receivedAt: number }>([
+        'courier-offer',
+        userId,
+      ]);
+      return current && Date.parse(current.serverTime) > Date.parse(value.serverTime)
+        ? current
+        : { ...value, receivedAt: performance.now() };
     },
     enabled,
-    refetchInterval: enabled ? 2_000 : false,
+    refetchInterval: enabled && !connected ? 2_000 : false,
     refetchIntervalInBackground: false,
   });
   const decision = useMutation({

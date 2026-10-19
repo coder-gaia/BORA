@@ -7,6 +7,7 @@ import dev.bora.orders.InvalidOrderTransition;
 import dev.bora.orders.OrderConfirmationCodes;
 import dev.bora.orders.OrderEventView;
 import dev.bora.orders.OrderPage;
+import dev.bora.orders.OrderSnapshots;
 import dev.bora.orders.OrderStatus;
 import dev.bora.orders.OrderSummary;
 import dev.bora.orders.OrderVersionConflict;
@@ -43,7 +44,7 @@ import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 @Service
-class OrdersService {
+class OrdersService implements OrderSnapshots {
   private static final String OPERATION = "CREATE_ORDER";
   private static final SecureRandom RANDOM = new SecureRandom();
   private static final GeometryFactory GEOMETRY = new GeometryFactory(new PrecisionModel(), 4326);
@@ -246,7 +247,32 @@ class OrdersService {
   OrderView detail(DemoPrincipal user, UUID id) {
     requireReader(user);
     OrderRecord record = findVisible(user, id);
+    return view(user, record);
+  }
+
+  @Override
+  public OrderView snapshot(DemoPrincipal user, UUID id) {
+    if (user.role() != DemoRole.COURIER) {
+      return detail(user, id);
+    }
+    OrderRecord record =
+        jdbc.sql(SELECT_ORDER + " WHERE o.id=:id AND o.courier_id=:courier")
+            .param("id", id)
+            .param("courier", user.courierId())
+            .query(
+                (row, index) ->
+                    new OrderRecord(
+                        summary(row),
+                        row.getObject("owner_user_id", UUID.class),
+                        row.getObject("visitor_context_id", UUID.class)))
+            .optional()
+            .orElseThrow(OrdersService::notFound);
+    return view(user, record);
+  }
+
+  private OrderView view(DemoPrincipal user, OrderRecord record) {
     OrderSummary order = record.summary();
+    UUID id = order.id();
     List<OrderEventView> events =
         jdbc.sql(
                 """

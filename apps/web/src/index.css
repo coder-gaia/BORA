@@ -400,10 +400,15 @@ h2 {
 
 .demo-description,
 .demo-empty,
-.session-summary {
+.session-summary,
+.connection-status {
   color: var(--muted-foreground);
   font-size: 14px;
   line-height: 1.7;
+}
+
+.connection-status {
+  margin-block: 0 24px;
 }
 
 .role-options,

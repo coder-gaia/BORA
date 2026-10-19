@@ -4,6 +4,9 @@ import { ArrowLeft, LogOut, Package, RefreshCw, Store, Truck, Users } from 'luci
 import { Button } from '@/components/ui/button';
 import { api, type DemoRole, type DemoUserView, type OrderView } from '@/lib/api';
 import { CourierWorkspace } from '@/components/courier-workspace';
+import { ConnectionStatus, RealtimeProvider } from '@/components/realtime-provider';
+import { useOrderUpdates, useRealtime } from '@/hooks/use-realtime';
+import { newerOrder } from '@/lib/realtime';
 
 const roles = [
   { value: 'STORE', label: 'Sou loja', icon: Store },
@@ -52,8 +55,15 @@ function ErrorMessage({ error }: { error: Error | null }) {
 
 export function DemoPanel() {
   const queryClient = useQueryClient();
-  const session = useQuery({ queryKey: ['session'], queryFn: api.session });
+  const session = useQuery({
+    queryKey: ['session'],
+    queryFn: ({ signal }) => api.session(signal),
+  });
   const authentication = useMutation({
+    async onMutate() {
+      await queryClient.cancelQueries();
+      queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== 'session' });
+    },
     mutationFn: async (role: DemoRole | null) => (role ? api.signIn(role) : api.signOut()),
     onSuccess(value) {
       queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== 'session' });
@@ -111,16 +121,17 @@ export function DemoPanel() {
         </Button>
       )}
       {user && !authentication.isPending && (
-        <>
+        <RealtimeProvider key={`${user.id}:${user.role}`} user={user}>
           <p className="session-summary" role="status">
             {user.displayName}. A sessão expira após duas horas sem uso.
           </p>
+          <ConnectionStatus />
           {user.role === 'COURIER' ? (
             <CourierWorkspace key={user.id} user={user} />
           ) : (
             <OrderWorkspace key={`${user.id}:${user.role}`} user={user} />
           )}
-        </>
+        </RealtimeProvider>
       )}
       {!user && !session.isPending && !session.error && (
         <p className="demo-empty">
@@ -134,20 +145,20 @@ export function DemoPanel() {
 
 function OrderWorkspace({ user }: { user: DemoUserView }) {
   const queryClient = useQueryClient();
+  const { connected } = useRealtime();
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const enabled = user.role === 'STORE' || user.role === 'OPERATIONS';
   const orders = useQuery({
     queryKey: ['orders', user.id, page],
-    queryFn: () => api.orders(page),
+    queryFn: ({ signal }) => api.orders(page, signal),
     enabled,
-    refetchInterval: (query) =>
-      query.state.data?.items.some((order) => active(order.status)) ? 3_000 : false,
+    refetchInterval: connected ? false : 3_000,
     refetchIntervalInBackground: false,
   });
   const store = useQuery({
     queryKey: ['store', user.id],
-    queryFn: api.store,
+    queryFn: ({ signal }) => api.store(signal),
     enabled: user.role === 'STORE',
   });
 
@@ -198,6 +209,7 @@ function OrderWorkspace({ user }: { user: DemoUserView }) {
             <li key={order.id}>
               <button
                 className="order-list-button"
+                data-order-id={order.id}
                 type="button"
                 onClick={() => setSelectedId(order.id!)}
                 aria-pressed={selectedId === order.id}
@@ -334,10 +346,16 @@ function OrderDetail({
   onChanged: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { connected } = useRealtime();
+  useOrderUpdates(id);
   const order = useQuery({
     queryKey: ['order', user.id, id],
-    queryFn: () => api.order(id),
-    refetchInterval: (query) => (active(query.state.data?.status) ? 2_000 : false),
+    async queryFn({ signal }) {
+      const value = await api.order(id, signal);
+      const current = queryClient.getQueryData<OrderView>(['order', user.id, id]);
+      return newerOrder(value, current) ? value : current!;
+    },
+    refetchInterval: (query) => (!connected && active(query.state.data?.status) ? 2_000 : false),
     refetchIntervalInBackground: false,
   });
   const reassign = useMutation({
