@@ -13,11 +13,27 @@ const StorePage = lazy(() =>
 const CourierPage = lazy(() =>
   import('@/components/workspace-page').then((module) => ({ default: module.CourierPage })),
 );
+const OperationsPage = lazy(() =>
+  import('@/components/workspace-page').then((module) => ({ default: module.OperationsPage })),
+);
 const PublicTrackingPage = lazy(() =>
   import('@/components/public-tracking').then((module) => ({ default: module.PublicTrackingPage })),
 );
 
 export function App() {
+  if (typeof window !== 'undefined' && window.location.pathname === '/operacao') {
+    return (
+      <Suspense
+        fallback={
+          <main className="tracking-route-loading" role="status">
+            Preparando a área da operação...
+          </main>
+        }
+      >
+        <OperationsPage />
+      </Suspense>
+    );
+  }
   if (typeof window !== 'undefined' && window.location.pathname === '/entregador') {
     return (
       <Suspense

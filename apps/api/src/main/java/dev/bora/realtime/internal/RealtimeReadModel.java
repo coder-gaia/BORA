@@ -65,9 +65,10 @@ class RealtimeReadModel {
       throw new ApiException(
           HttpStatus.FORBIDDEN, "FORBIDDEN", "Entre na operação para consultar este mapa.");
     }
-    List<List<Object>> points =
+    var captured =
         jdbc.sql(
                 """
+        WITH visible AS (
         SELECT c.id::text, ST_X(c.location::geometry) longitude,
           ST_Y(c.location::geometry) latitude, c.status
         FROM couriers c WHERE c.status<>'OFFLINE' AND c.location IS NOT NULL
@@ -97,6 +98,10 @@ class RealtimeReadModel {
                 WHERE f.courier_id=c.id AND f.status='PENDING'
                   AND own.visitor_context_id=CAST(:context AS uuid)))))
         ORDER BY c.id LIMIT 2000
+        )
+        SELECT statement_timestamp() observed_at,visible.*
+        FROM (SELECT 1) anchor LEFT JOIN visible ON true
+        ORDER BY visible.id
         """)
             .param("west", viewport.west())
             .param("south", viewport.south())
@@ -106,11 +111,26 @@ class RealtimeReadModel {
             .param("context", principal == null ? null : principal.contextId())
             .query(
                 (row, i) ->
-                    List.<Object>of(
-                        row.getString(1), row.getDouble(2), row.getDouble(3), row.getString(4), 0))
+                    new ObservedMapPoint(
+                        row.getTimestamp("observed_at").toInstant(),
+                        row.getString("id") == null
+                            ? null
+                            : List.<Object>of(
+                                row.getString("id"),
+                                row.getDouble("longitude"),
+                                row.getDouble("latitude"),
+                                row.getString("status"),
+                                0)))
             .list();
-    return new MapFrame(clock.instant(), points);
+    return new MapFrame(
+        captured.getFirst().observedAt(),
+        captured.stream()
+            .filter(point -> point.point() != null)
+            .map(ObservedMapPoint::point)
+            .toList());
   }
+
+  private record ObservedMapPoint(Instant observedAt, List<Object> point) {}
 
   TrackingSnapshot tracking(String code) {
     if (code == null || !code.matches("[A-Za-z0-9_-]{20,64}")) {

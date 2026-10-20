@@ -12,7 +12,13 @@ import { CourierWorkspace } from '@/components/courier-workspace';
 import { ConnectionStatus, RealtimeProvider } from '@/components/realtime-provider';
 import { OrderWorkspace } from '@/components/order-workspace';
 import { forgetTrainingIntents } from '@/lib/training-intent';
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
+
+const OperationsDashboard = lazy(() =>
+  import('@/components/operations-dashboard').then((module) => ({
+    default: module.OperationsDashboard,
+  })),
+);
 
 const roles = [
   { value: 'STORE', label: 'Sou loja', icon: Store },
@@ -79,7 +85,9 @@ function DemoWorkspace({ requestedRole }: { requestedRole?: DemoRole }) {
               ? 'Sua loja, suas entregas'
               : requestedRole === 'COURIER'
                 ? 'Sua próxima entrega'
-                : 'Experimente um pedido'}
+                : requestedRole === 'OPERATIONS'
+                  ? 'Sua visão da operação'
+                  : 'Experimente um pedido'}
           </h2>
         </div>
         {user && (
@@ -97,7 +105,9 @@ function DemoWorkspace({ requestedRole }: { requestedRole?: DemoRole }) {
           ? 'Entre como loja para criar e acompanhar seus pedidos neste contexto.'
           : requestedRole === 'COURIER'
             ? 'Entre como entregador para receber ofertas e percorrer cada etapa.'
-            : 'Escolha como participar. Você pode trocar de papel e continuar no mesmo contexto.'}
+            : requestedRole === 'OPERATIONS'
+              ? 'Entre como operação para acompanhar a cidade e os pedidos deste contexto.'
+              : 'Escolha como participar. Você pode trocar de papel e continuar no mesmo contexto.'}
       </p>
       <div className="role-options" role="group" aria-label="Escolher papel">
         {roles
@@ -123,6 +133,9 @@ function DemoWorkspace({ requestedRole }: { requestedRole?: DemoRole }) {
           <a className="store-area-link" href="/entregador">
             Abrir área do entregador <span aria-hidden="true">↗</span>
           </a>
+          <a className="store-area-link" href="/operacao">
+            Abrir área da operação <span aria-hidden="true">↗</span>
+          </a>
         </nav>
       )}
       <ErrorMessage error={authentication.error ?? session.error} />
@@ -140,6 +153,10 @@ function DemoWorkspace({ requestedRole }: { requestedRole?: DemoRole }) {
           <ConnectionStatus />
           {user.role === 'COURIER' ? (
             <CourierWorkspace key={user.id} user={user} />
+          ) : user.role === 'OPERATIONS' ? (
+            <Suspense fallback={<p role="status">Preparando a operação...</p>}>
+              <OperationsDashboard key={user.id} user={user} />
+            </Suspense>
           ) : (
             <OrderWorkspace key={`${user.id}:${user.role}`} user={user} />
           )}
@@ -154,7 +171,9 @@ function DemoWorkspace({ requestedRole }: { requestedRole?: DemoRole }) {
         <p className="demo-empty">
           {requestedRole === 'COURIER'
             ? 'Escolha Sou entregador para receber ofertas e praticar uma entrega.'
-            : 'Entre como loja para criar seu primeiro pedido.'}{' '}
+            : requestedRole === 'OPERATIONS'
+              ? 'Escolha Operação para acompanhar a cidade e abrir seus pedidos.'
+              : 'Entre como loja para criar seu primeiro pedido.'}{' '}
           Seus dados ficam restritos ao seu contexto de demonstração.
         </p>
       )}

@@ -441,6 +441,54 @@
         "required": ["points", "serverTime"],
         "type": "object"
       },
+      "OperationsMetrics": {
+        "properties": {
+          "activeOrders": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "deliveredLastHour": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "dueWithinFiveMinutes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "overdueOrders": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "searchingOrders": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "searchingOverThreeMinutes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "serverTime": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "activeOrders",
+          "deliveredLastHour",
+          "dueWithinFiveMinutes",
+          "overdueOrders",
+          "searchingOrders",
+          "searchingOverThreeMinutes",
+          "serverTime"
+        ],
+        "type": "object"
+      },
       "OrderEventView": {
         "properties": {
           "fromStatus": {
@@ -536,6 +584,18 @@
           "publicCode": {
             "type": "string"
           },
+          "searchingSince": {
+            "anyOf": [
+              {
+                "description": "Início da tentativa atual de busca; ausente nas demais etapas.",
+                "format": "date-time",
+                "type": ["null", "string"]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "slaDeadline": {
             "format": "date-time",
             "type": "string"
@@ -557,6 +617,7 @@
           "dropoff",
           "id",
           "publicCode",
+          "searchingSince",
           "slaDeadline",
           "status",
           "store",
@@ -2030,6 +2091,51 @@
         "tags": ["dispatch-controller"]
       }
     },
+    "/api/v1/ops/metrics": {
+      "get": {
+        "description": "Conta pedidos públicos simulados e do próprio contexto numa consulta coerente. Espera considera a tentativa atual de busca; os alertas excluem pedidos encerrados. Os totais independem do viewport e da página ou filtros abertos na interface.",
+        "operationId": "getOperationsMetrics",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationsMetrics"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "Entre na demonstração para continuar."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            },
+            "description": "O papel ou a sessão não permite esta ação."
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Consultar os indicadores da operação",
+        "tags": ["operations-metrics-controller"]
+      }
+    },
     "/api/v1/ops/orders/{id}/reassign": {
       "post": {
         "operationId": "reassignOrder",
@@ -2213,7 +2319,7 @@
     },
     "/api/v1/orders": {
       "get": {
-        "description": "Filtra todo o conjunto autorizado por estado, código público exato e escopo. Reutilize snapshotAt nas próximas páginas para excluir novas criações; os estados continuam atuais. OWN mostra o próprio contexto, PUBLIC o cenário simulado e ALL combina ambos.",
+        "description": "Filtra todo o conjunto autorizado por estado, código público exato e escopo. Reutilize snapshotAt nas próximas páginas para excluir novas criações; os estados continuam atuais. OWN mostra o próprio contexto, PUBLIC o cenário simulado e ALL combina ambos. WAITING é exclusivo da operação com status SEARCHING e ordena pelo início da tentativa atual de busca; size permanece entre 1 e 100.",
         "operationId": "listOrders",
         "parameters": [
           {
@@ -2271,6 +2377,16 @@
               "format": "date-time",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "RECENT",
+              "enum": ["RECENT", "WAITING"],
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2292,7 +2408,7 @@
                 }
               }
             },
-            "description": "Confira a paginação, o estado, o código, o escopo e o instante da consulta."
+            "description": "Confira a paginação, o estado, o código, o escopo, a ordenação e o instante da consulta."
           },
           "401": {
             "content": {

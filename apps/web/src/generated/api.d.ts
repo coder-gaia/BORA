@@ -278,6 +278,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/ops/metrics': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Consultar os indicadores da operação
+     * @description Conta pedidos públicos simulados e do próprio contexto numa consulta coerente. Espera considera a tentativa atual de busca; os alertas excluem pedidos encerrados. Os totais independem do viewport e da página ou filtros abertos na interface.
+     */
+    get: operations['getOperationsMetrics'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/ops/orders/{id}/reassign': {
     parameters: {
       query?: never;
@@ -321,7 +341,7 @@ export interface paths {
     };
     /**
      * Listar pedidos visíveis
-     * @description Filtra todo o conjunto autorizado por estado, código público exato e escopo. Reutilize snapshotAt nas próximas páginas para excluir novas criações; os estados continuam atuais. OWN mostra o próprio contexto, PUBLIC o cenário simulado e ALL combina ambos.
+     * @description Filtra todo o conjunto autorizado por estado, código público exato e escopo. Reutilize snapshotAt nas próximas páginas para excluir novas criações; os estados continuam atuais. OWN mostra o próprio contexto, PUBLIC o cenário simulado e ALL combina ambos. WAITING é exclusivo da operação com status SEARCHING e ordena pelo início da tentativa atual de busca; size permanece entre 1 e 100.
      */
     get: operations['listOrders'];
     put?: never;
@@ -582,6 +602,22 @@ export interface components {
       /** Formato: date-time */
       serverTime: string;
     };
+    OperationsMetrics: {
+      /** Formato: int64 */
+      activeOrders: number;
+      /** Formato: int64 */
+      deliveredLastHour: number;
+      /** Formato: int64 */
+      dueWithinFiveMinutes: number;
+      /** Formato: int64 */
+      overdueOrders: number;
+      /** Formato: int64 */
+      searchingOrders: number;
+      /** Formato: int64 */
+      searchingOverThreeMinutes: number;
+      /** Formato: date-time */
+      serverTime: string;
+    };
     OrderEventView: {
       fromStatus?:
         ('ASSIGNED' | 'AT_STORE' | 'CANCELED' | 'DELIVERED' | 'PICKED_UP' | 'SEARCHING') | null;
@@ -616,6 +652,7 @@ export interface components {
       /** Formato: uuid */
       id: string;
       publicCode: string;
+      searchingSince: (null | string) | null;
       /** Formato: date-time */
       slaDeadline: string;
       /** @enum {string} */
@@ -1569,6 +1606,44 @@ export interface operations {
       };
     };
   };
+  getOperationsMetrics: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['OperationsMetrics'];
+        };
+      };
+      /** @description Entre na demonstração para continuar. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O papel ou a sessão não permite esta ação. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
   reassignOrder: {
     parameters: {
       query?: never;
@@ -1698,6 +1773,7 @@ export interface operations {
         scope?: 'ALL' | 'OWN' | 'PUBLIC';
         size?: number;
         snapshotAt?: string;
+        sort?: 'RECENT' | 'WAITING';
         status?: 'ASSIGNED' | 'AT_STORE' | 'CANCELED' | 'DELIVERED' | 'PICKED_UP' | 'SEARCHING';
       };
       header?: never;
@@ -1715,7 +1791,7 @@ export interface operations {
           '*/*': components['schemas']['OrderPage'];
         };
       };
-      /** @description Confira a paginação, o estado, o código, o escopo e o instante da consulta. */
+      /** @description Confira a paginação, o estado, o código, o escopo, a ordenação e o instante da consulta. */
       400: {
         headers: {
           [name: string]: unknown;

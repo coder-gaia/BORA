@@ -34,6 +34,11 @@ acompanhar cada etapa. Um pedido de treino permite experimentar o percurso sozin
 a oferta e inicie a direção simulada, com pausa e retomada. A coleta e a confirmação da
 entrega continuam manuais; o código exibido pertence somente àquele treino.
 
+A [área da operação](https://bora.alexandregaia.me/operacao) reúne indicadores, mapa de
+entregadores e fila de busca. **Ver pedidos** abre filtros, busca por código e ordenação
+pela espera da tentativa atual. Cancelar ou redistribuir exige conferir o pedido e confirmar
+a ação. O [guia da operação](docs/operacao.md) explica os indicadores e esses controles.
+
 ## Executar localmente
 
 Pré-requisitos: Git e Docker com Compose. No Windows, abra o Docker Desktop com o mecanismo

@@ -248,10 +248,12 @@ test('redistribui pela operação e libera o entregador anterior', async ({ page
       new URL(response.url()).pathname === `/api/v1/ops/orders/${order.id}/reassign`,
   );
   await page.getByRole('button', { name: 'Redistribuir pedido', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Redistribuir este pedido?', exact: true }),
+  ).toBeFocused();
+  await page.getByRole('button', { name: 'Confirmar redistribuição', exact: true }).click();
   expect((await action).status()).toBe(204);
-  await expect(page.locator('.order-detail').getByRole('status')).toHaveText(
-    'Procurando entregador',
-  );
+  await expect(page.locator('.order-detail .order-status')).toHaveText('Procurando entregador');
   await expect(page.locator('.order-timeline')).toContainText('Pedido redistribuído');
   await chooseRole(page, 'Sou entregador');
   await expect(page.locator('.courier-status')).toHaveText('Disponível');

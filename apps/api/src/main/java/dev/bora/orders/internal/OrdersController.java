@@ -4,6 +4,7 @@ import dev.bora.identity.CurrentUser;
 import dev.bora.orders.OrderPage;
 import dev.bora.orders.OrderScope;
 import dev.bora.orders.OrderSnapshots;
+import dev.bora.orders.OrderSort;
 import dev.bora.orders.OrderStatus;
 import dev.bora.orders.OrderView;
 import io.swagger.v3.oas.annotations.Operation;
@@ -65,15 +66,17 @@ class OrdersController {
           "Filtra todo o conjunto autorizado por estado, código público exato e escopo. "
               + "Reutilize snapshotAt nas próximas páginas para excluir novas criações; "
               + "os estados continuam atuais. OWN mostra o próprio contexto, PUBLIC o cenário "
-              + "simulado e ALL combina ambos.")
+              + "simulado e ALL combina ambos. WAITING é exclusivo da operação com status SEARCHING "
+              + "e ordena pelo início da tentativa atual de busca; size permanece entre 1 e 100.")
   OrderPage list(
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size,
       @RequestParam(required = false) OrderStatus status,
       @RequestParam(required = false) String code,
       @RequestParam(defaultValue = "ALL") OrderScope scope,
-      @RequestParam(required = false) Instant snapshotAt) {
-    return orders.list(currentUser.require(), page, size, status, code, scope, snapshotAt);
+      @RequestParam(required = false) Instant snapshotAt,
+      @RequestParam(defaultValue = "RECENT") OrderSort sort) {
+    return orders.list(currentUser.require(), page, size, status, code, scope, snapshotAt, sort);
   }
 
   @GetMapping("/{id}")

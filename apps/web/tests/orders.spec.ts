@@ -63,7 +63,11 @@ test('cria pedido privado, preserva o contexto na troca de papel e cancela pela 
   await expect(page.getByRole('heading', { name: 'Detalhe do pedido' })).toBeVisible();
   await expect(page.getByText('Código de confirmação', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Cancelar pedido', exact: true }).click();
-  await expect(page.locator('.order-detail').getByRole('status')).toHaveText('Cancelado');
+  await expect(
+    page.getByRole('heading', { name: 'Cancelar este pedido?', exact: true }),
+  ).toBeFocused();
+  await page.getByRole('button', { name: 'Confirmar cancelamento', exact: true }).click();
+  await expect(page.locator('.order-detail .order-status')).toHaveText('Cancelado');
   await expect(page.locator('.order-timeline li')).toHaveCount(2);
   await expect(page.getByRole('button', { name: 'Cancelar pedido', exact: true })).toHaveCount(0);
 

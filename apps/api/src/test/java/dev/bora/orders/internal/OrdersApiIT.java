@@ -440,7 +440,9 @@ class OrdersApiIT {
     doAnswer(
             call -> {
               String sql = call.getArgument(0);
-              if (sql.contains("FROM order_events") && transitioned.compareAndSet(false, true)) {
+              if (sql.contains(
+                      "FROM order_events WHERE order_id = :id AND order_version <= :version")
+                  && transitioned.compareAndSet(false, true)) {
                 lifecycle.cancelByStore(id, 0, "test:transition-between-reads");
               }
               return call.callRealMethod();

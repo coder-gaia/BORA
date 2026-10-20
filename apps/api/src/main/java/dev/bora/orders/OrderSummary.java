@@ -15,7 +15,8 @@ import java.util.UUID;
       "status",
       "createdAt",
       "slaDeadline",
-      "version"
+      "version",
+      "searchingSince"
     })
 public record OrderSummary(
     UUID id,
@@ -26,4 +27,8 @@ public record OrderSummary(
     UUID courierId,
     Instant createdAt,
     Instant slaDeadline,
-    long version) {}
+    long version,
+    @Schema(
+            nullable = true,
+            description = "Início da tentativa atual de busca; ausente nas demais etapas.")
+        Instant searchingSince) {}

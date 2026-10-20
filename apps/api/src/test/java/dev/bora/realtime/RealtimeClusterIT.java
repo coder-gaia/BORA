@@ -531,6 +531,26 @@ class RealtimeClusterIT {
       OrderLifecycleService workflow = first.getBean(OrderLifecycleService.class);
       workflow.assign(orderId, 0, courier, "test:sensitive-actor");
       // Uma posição recente anterior à atribuição ainda não comprova a localização desta entrega.
+      jdbc.sql(
+              """
+          UPDATE couriers c SET location_updated_at=o.assigned_at-interval '1 second'
+          FROM orders o WHERE c.id=:courier AND o.id=:order
+          """)
+          .param("courier", courier)
+          .param("order", orderId)
+          .update();
+      assertThat(
+              jdbc.sql(
+                      """
+              SELECT c.location_updated_at<o.assigned_at
+                AND c.location_updated_at>=clock_timestamp()-interval '30 seconds'
+              FROM couriers c CROSS JOIN orders o WHERE c.id=:courier AND o.id=:order
+              """)
+                  .param("courier", courier)
+                  .param("order", orderId)
+                  .query(Boolean.class)
+                  .single())
+          .isTrue();
       JsonNode beforePosition = JSON.readTree(anonymous.get(secondPort, path).body());
       assertThat(beforePosition.path("courierPosition").isNull()).isTrue();
       assertThat(beforePosition.path("route").isNull()).isTrue();

@@ -1,5 +1,6 @@
 import type { components, paths } from '@/generated/api';
 
+export type OperationsMetrics = components['schemas']['OperationsMetrics'];
 export type SessionView = components['schemas']['SessionView'];
 export type DemoUserView = components['schemas']['DemoUserView'];
 export type StoreView = components['schemas']['StoreView'];
@@ -108,6 +109,8 @@ async function post<T>(
 }
 
 export const api = {
+  operationsMetrics: (signal?: AbortSignal) =>
+    request<OperationsMetrics>('/api/v1/ops/metrics', { signal }),
   simulationConfig: (signal?: AbortSignal) =>
     request<SimulationConfig>('/api/v1/map/config', { signal }),
   session: (signal?: AbortSignal) => request<SessionView>('/api/v1/auth/me', { signal }),
@@ -130,6 +133,7 @@ export const api = {
       code?: string;
       scope?: 'OWN' | 'PUBLIC' | 'ALL';
       snapshotAt?: string;
+      sort?: 'RECENT' | 'WAITING';
     } = {},
   ) => {
     const params = new URLSearchParams({ page: String(page), size: '10' });

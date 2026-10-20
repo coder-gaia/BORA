@@ -114,6 +114,7 @@ export function DeliveryMap(props: Props) {
         const addMarker = (kind: 'pickup' | 'dropoff' | 'courier', point: DeliveryPoint) => {
           const marker = document.createElement('span');
           marker.className = `delivery-map-marker marker-${kind}`;
+          marker.setAttribute('role', 'img');
           marker.setAttribute(
             'aria-label',
             kind === 'pickup' ? 'Loja' : kind === 'dropoff' ? 'Destino' : 'Entregador',
@@ -176,6 +177,7 @@ export function DeliveryMap(props: Props) {
         if (controller.signal.aborted || map.current !== current || !latest.current.courier) return;
         const marker = document.createElement('span');
         marker.className = 'delivery-map-marker marker-courier';
+        marker.setAttribute('role', 'img');
         marker.setAttribute('aria-label', 'Entregador');
         marker.textContent = 'E';
         const point = latest.current.courier;

@@ -33,6 +33,8 @@ import {
   type OrderScope,
   type OrderStatus,
 } from '@/lib/order-presentation';
+import { WaitingAge } from '@/components/waiting-age';
+import type { OperationsClock } from '@/lib/operations-clock';
 import { OrderProgress } from '@/components/order-progress';
 import { CopyValue, OrderCode } from '@/components/order-code';
 import { TrackingDelivery } from '@/components/tracking-delivery';
@@ -317,25 +319,38 @@ function CreateOrderForm({
   );
 }
 
-function OrderBrowser({
+export function OrderBrowser({
   user,
   onOpen,
   titleRef,
+  clock,
 }: {
   user: DemoUserView;
   onOpen: (id: string) => void;
   titleRef: React.RefObject<HTMLHeadingElement | null>;
+  clock?: OperationsClock;
 }) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<OrderStatus | ''>('');
   const [scope, setScope] = useState<OrderScope>(user.role === 'STORE' ? 'OWN' : 'ALL');
+  const [sort, setSort] = useState<'RECENT' | 'WAITING'>('RECENT');
   const [code, setCode] = useState('');
   const [draftCode, setDraftCode] = useState('');
   const [page, setPage] = useState(0);
   const [revision, setRevision] = useState(0);
   const generation = useRef(0);
   const snapshot = useRef<string | undefined>(undefined);
-  const queryKey = ['orders', user.id, 'browser', revision, status, code, scope, page] as const;
+  const queryKey = [
+    'orders',
+    user.id,
+    'browser',
+    revision,
+    status,
+    code,
+    scope,
+    sort,
+    page,
+  ] as const;
   const orders = useQuery({
     queryKey,
     queryFn: async ({ signal }) => {
@@ -344,6 +359,7 @@ function OrderBrowser({
         code: code || undefined,
         scope,
         snapshotAt: snapshot.current,
+        sort,
       });
       if (!signal.aborted && revision === generation.current)
         snapshot.current ??= result.snapshotAt;
@@ -354,7 +370,7 @@ function OrderBrowser({
   const refetch = orders.refetch;
   useEffect(() => {
     void refetch();
-  }, [refetch, revision, status, code, scope, page]);
+  }, [refetch, revision, status, code, scope, sort, page]);
   const observe = useCallback(
     (notify: () => void) => queryClient.getQueryCache().subscribe(notify),
     [queryClient],
@@ -411,6 +427,7 @@ function OrderBrowser({
             value={status}
             onChange={(event) => {
               setStatus(event.target.value as OrderStatus | '');
+              if (event.target.value !== 'SEARCHING') setSort('RECENT');
               restart();
             }}
           >
@@ -422,6 +439,23 @@ function OrderBrowser({
             ))}
           </select>
         </label>
+        {user.role === 'OPERATIONS' && (
+          <label>
+            Ordenar pedidos
+            <select
+              value={sort}
+              onChange={(event) => {
+                const next = event.target.value as 'RECENT' | 'WAITING';
+                setSort(next);
+                if (next === 'WAITING') setStatus('SEARCHING');
+                restart();
+              }}
+            >
+              <option value="RECENT">Mais recentes</option>
+              <option value="WAITING">Fila de busca</option>
+            </select>
+          </label>
+        )}
         <label className="order-search-label">
           Código do pedido
           <div className="order-search-field">
@@ -444,6 +478,7 @@ function OrderBrowser({
             variant="outline"
             onClick={() => {
               setStatus('');
+              setSort('RECENT');
               setCode('');
               setDraftCode('');
               restart();
@@ -496,6 +531,9 @@ function OrderBrowser({
                 <strong>{order.store.name}</strong>
                 <code className="order-list-code">{order.publicCode}</code>
                 <small>{formatTime(order.createdAt)}</small>
+                {user.role === 'OPERATIONS' && (
+                  <WaitingAge since={order.searchingSince} clock={clock} />
+                )}
               </span>
               <span className="order-status" data-status={order.status}>
                 {statusLabel(order.status)}
@@ -530,7 +568,7 @@ function OrderBrowser({
   );
 }
 
-function OrderDetail({
+export function OrderDetail({
   user,
   id,
   onClose,
@@ -542,6 +580,17 @@ function OrderDetail({
   const queryClient = useQueryClient();
   const { connected } = useRealtime();
   const heading = useRef<HTMLHeadingElement>(null);
+  const confirmationHeading = useRef<HTMLHeadingElement>(null);
+  const [intent, setIntent] = useState<{ action: 'cancel' | 'reassign'; version: number } | null>(
+    null,
+  );
+  const [operationNotice, setOperationNotice] = useState('');
+  const hadIntent = useRef(false);
+  useEffect(() => {
+    if (intent) confirmationHeading.current?.focus();
+    else if (hadIntent.current) heading.current?.focus();
+    hadIntent.current = Boolean(intent);
+  }, [intent]);
   useEffect(() => {
     heading.current?.focus();
   }, []);
@@ -558,22 +607,31 @@ function OrderDetail({
     refetchIntervalInBackground: false,
   });
   const reassign = useMutation({
-    mutationFn: () => api.reassignOrder(id, order.data!.version),
+    mutationFn: (version: number) => api.reassignOrder(id, version),
     async onSuccess() {
+      setIntent(null);
+      setOperationNotice(
+        'Busca por outro entregador iniciada. O pedido continua aberto neste detalhe.',
+      );
       await queryClient.invalidateQueries({ queryKey: ['order', user.id, id] });
       void queryClient.invalidateQueries({ queryKey: ['orders', user.id] });
     },
     onError() {
+      setIntent(null);
       void queryClient.invalidateQueries({ queryKey: ['order', user.id, id] });
     },
   });
   const cancel = useMutation({
-    mutationFn: () => api.cancelOrder(id, order.data!.version),
+    mutationFn: (version: number) => api.cancelOrder(id, version),
     onSuccess(value) {
+      setIntent(null);
+      if (user.role === 'OPERATIONS')
+        setOperationNotice('Pedido cancelado. O histórico permanece disponível.');
       queryClient.setQueryData(['order', user.id, id], value);
       void queryClient.invalidateQueries({ queryKey: ['orders', user.id] });
     },
     onError() {
+      setIntent(null);
       void queryClient.invalidateQueries({ queryKey: ['order', user.id, id] });
     },
   });
@@ -670,16 +728,87 @@ function OrderDetail({
           <OrderProgress key={item.id} order={item} />
           <div className="role-options">
             {canCancel && (
-              <Button variant="outline" disabled={busy} onClick={() => cancel.mutate()}>
+              <Button
+                variant="outline"
+                disabled={busy || Boolean(intent)}
+                onClick={() => {
+                  if (user.role === 'OPERATIONS') {
+                    cancel.reset();
+                    setOperationNotice('');
+                    setIntent({ action: 'cancel', version: item.version });
+                  } else cancel.mutate(item.version);
+                }}
+              >
                 {cancel.isPending ? 'Cancelando...' : 'Cancelar pedido'}
               </Button>
             )}
             {canReassign && (
-              <Button variant="outline" disabled={busy} onClick={() => reassign.mutate()}>
+              <Button
+                variant="outline"
+                disabled={busy || Boolean(intent)}
+                onClick={() => {
+                  reassign.reset();
+                  setOperationNotice('');
+                  setIntent({ action: 'reassign', version: item.version });
+                }}
+              >
                 {reassign.isPending ? 'Redistribuindo...' : 'Redistribuir pedido'}
               </Button>
             )}
           </div>
+          {operationNotice && (
+            <p role="status" className="operations-action-notice">
+              {operationNotice}
+            </p>
+          )}
+          {intent && user.role === 'OPERATIONS' && (
+            <section
+              className="operations-confirmation"
+              aria-labelledby="operations-confirmation-title"
+            >
+              <h4 id="operations-confirmation-title" tabIndex={-1} ref={confirmationHeading}>
+                {intent.action === 'reassign'
+                  ? 'Redistribuir este pedido?'
+                  : 'Cancelar este pedido?'}
+              </h4>
+              <code>{item.publicCode}</code>
+              <p>
+                {intent.action === 'reassign'
+                  ? 'O entregador atual será liberado e uma nova busca começará. O histórico será preservado.'
+                  : 'A entrega será encerrada e os recursos reservados serão liberados. O histórico será preservado.'}
+              </p>
+              {intent.version !== item.version && (
+                <p role="status">
+                  O pedido mudou. Reveja a etapa atual antes de confirmar outra ação.
+                </p>
+              )}
+              <div className="role-options">
+                <Button
+                  disabled={
+                    busy ||
+                    intent.version !== item.version ||
+                    (intent.action === 'reassign' ? !canReassign : !canCancel)
+                  }
+                  onClick={() =>
+                    intent.action === 'reassign'
+                      ? reassign.mutate(intent.version)
+                      : cancel.mutate(intent.version)
+                  }
+                >
+                  {intent.action === 'reassign'
+                    ? 'Confirmar redistribuição'
+                    : 'Confirmar cancelamento'}
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={cancel.isPending || reassign.isPending}
+                  onClick={() => setIntent(null)}
+                >
+                  Rever pedido
+                </Button>
+              </div>
+            </section>
+          )}
         </>
       )}
     </section>

@@ -70,3 +70,20 @@ export function CourierPage() {
     />
   );
 }
+
+export function OperationsPage() {
+  return (
+    <WorkspacePage
+      role="OPERATIONS"
+      name="Área da operação"
+      headline={
+        <>
+          A cidade segue.
+          <br />
+          Você acompanha.
+        </>
+      }
+      description="Veja a cidade ao vivo ou abra os pedidos para acompanhar cada entrega e agir quando necessário."
+    />
+  );
+}

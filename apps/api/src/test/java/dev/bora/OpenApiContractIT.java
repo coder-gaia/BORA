@@ -77,6 +77,7 @@ class OpenApiContractIT {
               "/api/v1/map/snapshot",
               "/api/v1/map/config",
               "/api/v1/ops/snapshot",
+              "/api/v1/ops/metrics",
               "/api/v1/tracking/{code}",
               "/api/v1/stores/me",
               "/api/v1/orders",
@@ -234,6 +235,92 @@ class OpenApiContractIT {
                   .get(0)
                   .has("sessionCookie"))
           .isTrue();
+      JsonNode metrics = paths.path("/api/v1/ops/metrics").path("get");
+      assertThat(metrics.path("operationId").asString()).isEqualTo("getOperationsMetrics");
+      assertThat(metrics.path("parameters").isEmpty()).isTrue();
+      assertThat(
+              metrics
+                  .path("responses")
+                  .path("200")
+                  .path("content")
+                  .path("application/json")
+                  .path("schema")
+                  .path("$ref")
+                  .asString())
+          .endsWith("/OperationsMetrics");
+      assertThat(metrics.path("security").size()).isEqualTo(1);
+      assertThat(metrics.path("security").get(0).has("sessionCookie")).isTrue();
+      assertThat(metrics.path("security").get(0).has("csrfToken")).isFalse();
+      for (String status : List.of("401", "403")) {
+        assertThat(
+                metrics
+                    .path("responses")
+                    .path(status)
+                    .path("content")
+                    .path("application/problem+json")
+                    .path("schema")
+                    .path("$ref")
+                    .asString())
+            .isEqualTo("#/components/schemas/ApiProblem");
+      }
+      JsonNode metricsSchema =
+          contract.path("components").path("schemas").path("OperationsMetrics");
+      List<String> countFields =
+          List.of(
+              "activeOrders",
+              "searchingOrders",
+              "searchingOverThreeMinutes",
+              "overdueOrders",
+              "dueWithinFiveMinutes",
+              "deliveredLastHour");
+      assertThat(metricsSchema.path("properties").size()).isEqualTo(7);
+      for (String field : countFields) {
+        assertThat(metricsSchema.path("properties").path(field).path("type").asString())
+            .as(field)
+            .isEqualTo("integer");
+        assertThat(metricsSchema.path("properties").path(field).path("minimum").asLong())
+            .as(field)
+            .isZero();
+        assertThat(metricsSchema.path("properties").path(field).has("minimum")).as(field).isTrue();
+      }
+      assertThat(metricsSchema.path("properties").path("serverTime").path("format").asString())
+          .isEqualTo("date-time");
+      var requiredMetricFields = new java.util.HashSet<String>();
+      for (JsonNode field : metricsSchema.path("required"))
+        requiredMetricFields.add(field.asString());
+      assertThat(requiredMetricFields)
+          .containsExactlyInAnyOrder(
+              "activeOrders",
+              "searchingOrders",
+              "searchingOverThreeMinutes",
+              "overdueOrders",
+              "dueWithinFiveMinutes",
+              "deliveredLastHour",
+              "serverTime");
+      JsonNode sortParameter = null;
+      for (JsonNode parameter : paths.path("/api/v1/orders").path("get").path("parameters")) {
+        if (parameter.path("name").asString().equals("sort")) sortParameter = parameter;
+      }
+      assertThat(sortParameter)
+          .as("orders expose the bounded server-side waiting queue")
+          .isNotNull();
+      assertThat(sortParameter.path("in").asString()).isEqualTo("query");
+      assertThat(sortParameter.path("required").asBoolean()).isFalse();
+      assertThat(sortParameter.path("schema").path("default").asString()).isEqualTo("RECENT");
+      var sorts = new java.util.HashSet<String>();
+      for (JsonNode value : sortParameter.path("schema").path("enum")) sorts.add(value.asString());
+      assertThat(sorts).containsExactlyInAnyOrder("RECENT", "WAITING");
+      JsonNode summarySchema = contract.path("components").path("schemas").path("OrderSummary");
+      JsonNode searchingSince = summarySchema.path("properties").path("searchingSince");
+      assertThat(searchingSince.path("anyOf").size()).isEqualTo(2);
+      assertThat(searchingSince.path("anyOf").get(0).path("format").asString())
+          .isEqualTo("date-time");
+      assertThat(searchingSince.path("anyOf").get(1).path("type").asString()).isEqualTo("null");
+      boolean searchingSinceRequired = false;
+      for (JsonNode field : summarySchema.path("required")) {
+        searchingSinceRequired |= field.asString().equals("searchingSince");
+      }
+      assertThat(searchingSinceRequired).isTrue();
       JsonNode security = paths.path("/api/v1/orders").path("post").path("security");
       assertThat(security.size()).isEqualTo(1);
       assertThat(security.get(0).has("sessionCookie")).isTrue();

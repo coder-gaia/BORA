@@ -64,7 +64,7 @@ class OpenApiConfiguration {
       nullable(components, "SessionView", "user");
       nullable(components, "CourierOfferInbox", "offer");
       nullable(components, "DemoUserView", "storeId", "courierId");
-      nullable(components, "OrderSummary", "courierId");
+      nullable(components, "OrderSummary", "courierId", "searchingSince");
       nullable(components, "OrderView", "courierId", "confirmationCode");
       nullable(components, "OrderEventView", "fromStatus");
       nullable(components, "CourierView", "location", "locationUpdatedAt");
@@ -182,7 +182,7 @@ class OpenApiConfiguration {
                                   error(
                                       operation.getResponses(),
                                       "400",
-                                      "Confira a paginação, o estado, o código, o escopo e o instante da consulta.");
+                                      "Confira a paginação, o estado, o código, o escopo, a ordenação e o instante da consulta.");
                               case "getOrder", "getCurrentStore" ->
                                   error(
                                       operation.getResponses(),

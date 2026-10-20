@@ -20,7 +20,7 @@
     "contract:generate": "node ../../scripts/generate-api-types.mjs",
     "contract:check": "node ../../scripts/generate-api-types.mjs --check",
     "test:e2e": "playwright test",
-    "test:unit": "node --test unit/order-progress.test.ts unit/courier-motion.test.ts unit/public-map-feed.test.mjs unit/preview-projection.test.mjs unit/courier-canvas.test.mjs unit/basemap-integrity.test.mjs unit/viewport-gate.test.mjs unit/tracking-protocol.test.ts unit/route-motion.test.ts unit/auto-drive.test.ts unit/training-intent.test.ts unit/courier-work.test.ts"
+    "test:unit": "node --test unit/order-progress.test.ts unit/courier-motion.test.ts unit/public-map-feed.test.mjs unit/preview-projection.test.mjs unit/courier-canvas.test.mjs unit/basemap-integrity.test.mjs unit/viewport-gate.test.mjs unit/tracking-protocol.test.ts unit/route-motion.test.ts unit/auto-drive.test.ts unit/training-intent.test.ts unit/courier-work.test.ts unit/operations-clock.test.ts unit/operations-map-feed.test.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "5.3.0",

@@ -1,5 +1,7 @@
 ﻿import type { MapViewport } from './courier-motion';
 
+export type ScopedViewport = Omit<MapViewport, 'scope'> & { scope: 'PUBLIC' | 'OPERATIONS' };
+
 type Clock = {
   now: () => number;
   schedule: (callback: () => void, delay: number) => number;
@@ -10,7 +12,7 @@ const browserClock: Clock = {
   schedule: (callback, delay) => window.setTimeout(callback, delay),
   cancel: (timer) => window.clearTimeout(timer),
 };
-export function sameViewport(a: MapViewport, b: MapViewport) {
+export function sameViewport(a: ScopedViewport, b: ScopedViewport) {
   return (
     a.west === b.west &&
     a.south === b.south &&
@@ -22,27 +24,27 @@ export function sameViewport(a: MapViewport, b: MapViewport) {
 
 // The initial MAP follows the initial SEND + synchronous SUBSCRIBE on this protocol.
 // Later MAPs indicate server progress, not an exact acknowledgment of a viewport.
-export class ViewportGate {
+export class ViewportGate<T extends ScopedViewport = MapViewport> {
   private active = false;
   private awaitingProgress = true;
-  private latest: MapViewport | undefined;
-  private sent: MapViewport | undefined;
+  private latest: T | undefined;
+  private sent: T | undefined;
   private notBefore = Infinity;
   private timer: number | undefined;
-  private readonly send: (viewport: MapViewport) => void;
+  private readonly send: (viewport: T) => void;
   private readonly clock: Clock;
-  constructor(send: (viewport: MapViewport) => void, clock: Clock = browserClock) {
+  constructor(send: (viewport: T) => void, clock: Clock = browserClock) {
     this.send = send;
     this.clock = clock;
   }
 
-  start(viewport: MapViewport) {
+  start(viewport: T) {
     this.stop();
     this.active = true;
     this.latest = { ...viewport };
     this.transmit();
   }
-  update(viewport: MapViewport) {
+  update(viewport: T) {
     this.latest = { ...viewport };
     this.schedule();
   }

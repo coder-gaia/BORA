@@ -212,6 +212,22 @@ Os marcos de chegada, coleta e entrega refletem o estado confirmado pelo backend
 Consulte o [guia de entregadores](entregadores-e-posicoes.md#área-do-entregador-e-treino)
 para os limites, a recuperação da intenção e o código privado de confirmação.
 
+## Operação
+
+Em `/operacao`, **Sou da operação** abre a visão geral do cenário simulado e do próprio
+contexto. Os indicadores representam esse conjunto autorizado, independentemente da área
+visível no mapa e dos filtros de uma página de pedidos.
+
+O mapa agrupa entregadores próximos. Aproximar um grupo permite distinguir seus pontos;
+a escala métrica ajuda a comparar distâncias. A lista acessível oferece outra forma de
+consultar e localizar entregadores. Esse mapa usa uma conexão privada da operação, separada
+da conexão pública da página inicial. Sair ou perder a autorização remove esses pontos.
+
+**Ver pedidos** revela a consulta e a fila de busca. A espera considera a tentativa atual,
+inclusive depois de redistribuir. A confirmação de uma ação mostra o código do pedido e seu
+efeito; um conflito atualiza o detalhe sem repetir a ação automaticamente. Consulte o
+[guia da operação](operacao.md) para os intervalos dos indicadores e as regras da fila.
+
 ## Publicação e política de conteúdo
 
 A política de produção permite `https://tiles.openfreemap.org` em `connect-src` e `img-src` para

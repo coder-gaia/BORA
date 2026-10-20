@@ -9,6 +9,7 @@ import dev.bora.orders.OrderEventView;
 import dev.bora.orders.OrderPage;
 import dev.bora.orders.OrderScope;
 import dev.bora.orders.OrderSnapshots;
+import dev.bora.orders.OrderSort;
 import dev.bora.orders.OrderStatus;
 import dev.bora.orders.OrderSummary;
 import dev.bora.orders.OrderVersionConflict;
@@ -65,6 +66,10 @@ class OrdersService implements OrderSnapshots, TrainingOrders {
       """
       SELECT o.id, o.public_code, o.status, o.courier_id, o.created_at, o.sla_deadline,
         o.version, o.owner_user_id, o.visitor_context_id, o.store_id,
+        CASE WHEN o.status='SEARCHING' THEN GREATEST(o.created_at,COALESCE(
+          (SELECT e.occurred_at FROM order_events e WHERE e.order_id=o.id
+            AND e.type='ORDER_REASSIGNED' AND e.order_version<=o.version
+            ORDER BY e.order_version DESC,e.id DESC LIMIT 1),o.created_at)) END searching_since,
         ST_Y(o.dropoff::geometry) dropoff_latitude, ST_X(o.dropoff::geometry) dropoff_longitude,
         s.name store_name, s.service_area_id,
         ST_Y(s.location::geometry) store_latitude, ST_X(s.location::geometry) store_longitude
@@ -433,7 +438,8 @@ class OrdersService implements OrderSnapshots, TrainingOrders {
       OrderStatus status,
       String code,
       OrderScope scope,
-      Instant snapshotAt) {
+      Instant snapshotAt,
+      OrderSort sort) {
     requireReader(user);
     if (page < 0 || size < 1 || size > 100 || page > 100_000) {
       throw failure(
@@ -441,6 +447,22 @@ class OrdersService implements OrderSnapshots, TrainingOrders {
           "INVALID_PAGE",
           "Informe uma página entre 0 e 100000 e um tamanho entre 1 e 100.");
     }
+    if (sort == OrderSort.WAITING && user.role() != DemoRole.OPERATIONS) {
+      throw failure(
+          HttpStatus.FORBIDDEN,
+          "OPERATIONS_ROLE_REQUIRED",
+          "Entre na operação para consultar a fila por tempo de espera.");
+    }
+    if (sort == OrderSort.WAITING && status != OrderStatus.SEARCHING) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "INVALID_ORDER_SORT",
+          "A fila por tempo de espera exige o estado de busca por entregador.");
+    }
+    String ordering =
+        sort == OrderSort.WAITING
+            ? " ORDER BY searching_since ASC,o.created_at ASC,o.id ASC"
+            : " ORDER BY o.created_at DESC,o.id DESC";
     String queryCode = code == null || code.isBlank() ? null : code.strip();
     if (queryCode != null && !queryCode.matches("[A-Za-z0-9_-]{20,64}")) {
       throw failure(
@@ -481,10 +503,7 @@ class OrdersService implements OrderSnapshots, TrainingOrders {
                   .query(Long.class)
                   .single();
           List<OrderSummary> items =
-              jdbc.sql(
-                      SELECT_ORDER
-                          + where
-                          + " ORDER BY o.created_at DESC, o.id DESC LIMIT :size OFFSET :offset")
+              jdbc.sql(SELECT_ORDER + where + ordering + " LIMIT :size OFFSET :offset")
                   .params(parameters)
                   .param("size", size)
                   .param("offset", (long) page * size)
@@ -669,7 +688,8 @@ class OrdersService implements OrderSnapshots, TrainingOrders {
         row.getObject("courier_id", UUID.class),
         instant(row, "created_at"),
         instant(row, "sla_deadline"),
-        row.getLong("version"));
+        row.getLong("version"),
+        row.getTimestamp("searching_since") == null ? null : instant(row, "searching_since"));
   }
 
   private static Instant instant(ResultSet row, String column) throws SQLException {
