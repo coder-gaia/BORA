@@ -482,6 +482,10 @@
             "format": "int32",
             "type": "integer"
           },
+          "snapshotAt": {
+            "format": "date-time",
+            "type": "string"
+          },
           "totalElements": {
             "format": "int64",
             "type": "integer"
@@ -491,7 +495,7 @@
             "type": "integer"
           }
         },
-        "required": ["items", "page", "size", "totalElements", "totalPages"],
+        "required": ["items", "page", "size", "snapshotAt", "totalElements", "totalPages"],
         "type": "object"
       },
       "OrderSummary": {
@@ -743,6 +747,77 @@
         "required": ["id", "location", "name", "serviceAreaId"],
         "type": "object"
       },
+      "TrackingEvent": {
+        "properties": {
+          "fromStatus": {
+            "anyOf": [
+              {
+                "enum": ["ASSIGNED", "AT_STORE", "CANCELED", "DELIVERED", "PICKED_UP", "SEARCHING"],
+                "type": ["null", "string"]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "orderVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "toStatus": {
+            "enum": ["ASSIGNED", "AT_STORE", "CANCELED", "DELIVERED", "PICKED_UP", "SEARCHING"],
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": ["fromStatus", "occurredAt", "orderVersion", "toStatus", "type"],
+        "type": "object"
+      },
+      "TrackingRoute": {
+        "properties": {
+          "calculatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "destination": {
+            "enum": ["DROPOFF", "PICKUP"],
+            "type": "string"
+          },
+          "distanceMeters": {
+            "format": "double",
+            "type": "number"
+          },
+          "durationMillis": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "geometry": {
+            "items": {
+              "$ref": "#/components/schemas/GeoPoint"
+            },
+            "type": "array"
+          },
+          "simulatedDurationMillis": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "calculatedAt",
+          "destination",
+          "distanceMeters",
+          "durationMillis",
+          "geometry",
+          "simulatedDurationMillis"
+        ],
+        "type": "object"
+      },
       "TrackingSnapshot": {
         "properties": {
           "courierPosition": {
@@ -755,11 +830,48 @@
               }
             ]
           },
+          "courierPositionUpdatedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": ["null", "string"]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
           "dropoff": {
             "$ref": "#/components/schemas/GeoPoint"
           },
+          "etaSeconds": {
+            "anyOf": [
+              {
+                "description": "Estimativa em segundos simulados até o próximo marco, calculada na data da rota.",
+                "format": "int64",
+                "type": ["integer", "null"]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "pickup": {
             "$ref": "#/components/schemas/GeoPoint"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackingRoute"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "serverTime": {
             "format": "date-time",
@@ -772,12 +884,31 @@
           "storeName": {
             "type": "string"
           },
+          "timeline": {
+            "items": {
+              "$ref": "#/components/schemas/TrackingEvent"
+            },
+            "type": "array"
+          },
           "version": {
             "format": "int64",
             "type": "integer"
           }
         },
-        "required": ["dropoff", "pickup", "serverTime", "status", "storeName", "version"],
+        "required": [
+          "courierPosition",
+          "courierPositionUpdatedAt",
+          "createdAt",
+          "dropoff",
+          "etaSeconds",
+          "pickup",
+          "route",
+          "serverTime",
+          "status",
+          "storeName",
+          "timeline",
+          "version"
+        ],
         "type": "object"
       }
     },
@@ -1794,7 +1925,7 @@
     },
     "/api/v1/orders": {
       "get": {
-        "description": "Mostra pedidos do contexto do visitante e pedidos públicos das lojas simuladas.",
+        "description": "Filtra todo o conjunto autorizado por estado, código público exato e escopo. Reutilize snapshotAt nas próximas páginas para excluir novas criações; os estados continuam atuais. OWN mostra o próprio contexto, PUBLIC o cenário simulado e ALL combina ambos.",
         "operationId": "listOrders",
         "parameters": [
           {
@@ -1815,6 +1946,42 @@
               "default": 20,
               "format": "int32",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": ["ASSIGNED", "AT_STORE", "CANCELED", "DELIVERED", "PICKED_UP", "SEARCHING"],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "ALL",
+              "enum": ["ALL", "OWN", "PUBLIC"],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "snapshotAt",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
             }
           }
         ],
@@ -1837,7 +2004,7 @@
                 }
               }
             },
-            "description": "Confira os parâmetros de paginação."
+            "description": "Confira a paginação, o estado, o código, o escopo e o instante da consulta."
           },
           "401": {
             "content": {

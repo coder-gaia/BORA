@@ -284,7 +284,7 @@ export interface paths {
     };
     /**
      * Listar pedidos visíveis
-     * @description Mostra pedidos do contexto do visitante e pedidos públicos das lojas simuladas.
+     * @description Filtra todo o conjunto autorizado por estado, código público exato e escopo. Reutilize snapshotAt nas próximas páginas para excluir novas criações; os estados continuam atuais. OWN mostra o próprio contexto, PUBLIC o cenário simulado e ALL combina ambos.
      */
     get: operations['listOrders'];
     put?: never;
@@ -560,6 +560,8 @@ export interface components {
       page: number;
       /** Formato: int32 */
       size: number;
+      /** Formato: date-time */
+      snapshotAt: string;
       /** Formato: int64 */
       totalElements: number;
       /** Formato: int32 */
@@ -641,15 +643,46 @@ export interface components {
       /** Formato: uuid */
       serviceAreaId: string;
     };
+    TrackingEvent: {
+      fromStatus:
+        | ('ASSIGNED' | 'AT_STORE' | 'CANCELED' | 'DELIVERED' | 'PICKED_UP' | 'SEARCHING' | null)
+        | null;
+      /** Formato: date-time */
+      occurredAt: string;
+      /** Formato: int64 */
+      orderVersion: number;
+      /** @enum {string} */
+      toStatus: 'ASSIGNED' | 'AT_STORE' | 'CANCELED' | 'DELIVERED' | 'PICKED_UP' | 'SEARCHING';
+      type: string;
+    };
+    TrackingRoute: {
+      /** Formato: date-time */
+      calculatedAt: string;
+      /** @enum {string} */
+      destination: 'DROPOFF' | 'PICKUP';
+      /** Formato: double */
+      distanceMeters: number;
+      /** Formato: int64 */
+      durationMillis: number;
+      geometry: components['schemas']['GeoPoint'][];
+      /** Formato: int64 */
+      simulatedDurationMillis: number;
+    };
     TrackingSnapshot: {
-      courierPosition?: components['schemas']['GeoPoint'] | null;
+      courierPosition: components['schemas']['GeoPoint'] | null;
+      courierPositionUpdatedAt: (null | string) | null;
+      /** Formato: date-time */
+      createdAt: string;
       dropoff: components['schemas']['GeoPoint'];
+      etaSeconds: (number | null) | null;
       pickup: components['schemas']['GeoPoint'];
+      route: components['schemas']['TrackingRoute'] | null;
       /** Formato: date-time */
       serverTime: string;
       /** @enum {string} */
       status: 'ASSIGNED' | 'AT_STORE' | 'CANCELED' | 'DELIVERED' | 'PICKED_UP' | 'SEARCHING';
       storeName: string;
+      timeline: components['schemas']['TrackingEvent'][];
       /** Formato: int64 */
       version: number;
     };
@@ -1436,8 +1469,12 @@ export interface operations {
   listOrders: {
     parameters: {
       query?: {
+        code?: string;
         page?: number;
+        scope?: 'ALL' | 'OWN' | 'PUBLIC';
         size?: number;
+        snapshotAt?: string;
+        status?: 'ASSIGNED' | 'AT_STORE' | 'CANCELED' | 'DELIVERED' | 'PICKED_UP' | 'SEARCHING';
       };
       header?: never;
       path?: never;
@@ -1454,7 +1491,7 @@ export interface operations {
           '*/*': components['schemas']['OrderPage'];
         };
       };
-      /** @description Confira os parâmetros de paginação. */
+      /** @description Confira a paginação, o estado, o código, o escopo e o instante da consulta. */
       400: {
         headers: {
           [name: string]: unknown;

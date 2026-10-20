@@ -28,6 +28,11 @@ test('cria pedido privado, preserva o contexto na troca de papel e cancela pela 
   const response = await creation;
   expect(response.status()).toBe(201);
   const created = (await response.json()) as { id: string };
+  await expect(page.getByRole('heading', { name: 'Detalhe do pedido' })).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'Status do pedido', exact: true })).toHaveCount(
+    0,
+  );
+  await page.getByRole('button', { name: 'Acompanhar pedido', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Detalhe do pedido' })).toBeVisible();
   await expect(page.getByText('Código de confirmação', { exact: true })).toBeVisible();
   await expect(page.locator('.order-timeline li')).toHaveCount(1);
@@ -102,6 +107,7 @@ test('repete a chave de idempotência quando a resposta da criação é perdida'
   expect(keys).toHaveLength(2);
   expect(keys[0]).toBeTruthy();
   expect(keys[0]).toBe(keys[1]);
+  await page.getByRole('button', { name: 'Acompanhar pedido', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Detalhe do pedido' })).toBeVisible();
   await page.getByRole('button', { name: 'Cancelar pedido', exact: true }).click();
   await expect(page.locator('.order-detail').getByRole('status')).toHaveText('Cancelado');

@@ -59,10 +59,29 @@ Cada contexto pode ter no máximo cinco pedidos ativos. A verificação e a inse
 sob o mesmo lock no PostgreSQL, inclusive quando as requisições chegam a instâncias diferentes.
 Falhas na gravação do evento também desfazem pedido e idempotência.
 
-`GET /orders?page=0&size=20` retorna uma página limitada. `GET /orders/{id}` inclui a linha do
-tempo compatível com a versão consultada. A visibilidade permite o próprio contexto e o
-cenário público simulado; pedidos particulares de outro visitante retornam 404, inclusive para
-uma conta de operação. Dados internos de sessão e hashes não são enviados ao navegador.
+`GET /orders?page=0&size=20` retorna uma página limitada. Os parâmetros opcionais `status`,
+`code` e `scope` filtram o conjunto autorizado inteiro, antes da contagem e da paginação:
+
+- `status`: `SEARCHING`, `ASSIGNED`, `AT_STORE`, `PICKED_UP`, `DELIVERED` ou `CANCELED`.
+- `code`: o `publicCode` completo e exato, respeitando maiúsculas e minúsculas. Esse código
+  estável de 192 bits, codificado em 32 caracteres base64url, também compõe o link de rastreio.
+  Não é o código de seis dígitos usado para confirmar a entrega.
+- `scope=OWN`: somente pedidos do próprio contexto. A tela da loja usa esse escopo inicialmente.
+- `scope=PUBLIC`: somente o cenário das lojas simuladas, acessado por escolha explícita.
+- `scope=ALL`: combina os dois, mantendo a compatibilidade do endpoint existente.
+
+Cada resposta inclui `snapshotAt`, definido no servidor. Reutilizar esse valor nas próximas
+páginas exclui pedidos criados depois da consulta inicial. A ordenação usa `created_at DESC,
+id DESC`, inclusive quando os horários empatam. Datas futuras são recusadas. Contagem e itens
+usam os mesmos filtros e a mesma transação de leitura repetível; entre páginas os estados ainda
+podem mudar, portanto esse limite de criação não representa um snapshot histórico dos estados.
+A interface preserva a página exibida e sinaliza atualizações até o usuário pedir uma nova lista.
+
+`GET /orders/{id}` permanece independente dos filtros e inclui a linha do tempo compatível com
+a versão consultada. A visibilidade permite o próprio contexto e o cenário público simulado;
+pedidos particulares de outro visitante retornam 404, inclusive para uma conta de operação.
+A busca por código não contorna essa autorização. Dados internos de sessão e hashes não são
+enviados ao navegador.
 
 `POST /orders/{id}/cancel`, com `expectedVersion`, cancela conforme o papel e a etapa. Versão
 antiga ou transição inválida retorna 409. O cancelamento e seu evento pertencem à mesma transação.

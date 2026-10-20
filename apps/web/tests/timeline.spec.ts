@@ -25,6 +25,7 @@ test('navega pelas etapas e alcança o registro do pedido pelo teclado sem nova 
   expect(Boolean(created.confirmationCode)).toBe(true);
   const createdEvent = created.timeline.find((event) => event.type === 'ORDER_CREATED');
   expect(createdEvent).toBeDefined();
+  await page.getByRole('button', { name: 'Acompanhar pedido', exact: true }).click();
 
   const detail = page.getByRole('region', { name: 'Detalhe do pedido', exact: true });
   await expect(detail.getByRole('status')).toHaveText('Procurando entregador');

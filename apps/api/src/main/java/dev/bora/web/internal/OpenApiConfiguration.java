@@ -70,7 +70,14 @@ class OpenApiConfiguration {
       nullable(components, "CourierView", "location", "locationUpdatedAt");
       nullable(components, "CourierWorkView", "order");
       nullable(components, "AssignedOrderView", "atStoreAt", "pickedUpAt");
-      nullable(components, "TrackingSnapshot", "courierPosition");
+      nullable(
+          components,
+          "TrackingSnapshot",
+          "courierPosition",
+          "courierPositionUpdatedAt",
+          "route",
+          "etaSeconds");
+      nullable(components, "TrackingEvent", "fromStatus");
 
       api.getPaths()
           .forEach(
@@ -153,7 +160,7 @@ class OpenApiConfiguration {
                                   error(
                                       operation.getResponses(),
                                       "400",
-                                      "Confira os parâmetros de paginação.");
+                                      "Confira a paginação, o estado, o código, o escopo e o instante da consulta.");
                               case "getOrder", "getCurrentStore" ->
                                   error(
                                       operation.getResponses(),

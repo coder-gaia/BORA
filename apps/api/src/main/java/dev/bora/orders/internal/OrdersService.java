@@ -7,6 +7,7 @@ import dev.bora.orders.InvalidOrderTransition;
 import dev.bora.orders.OrderConfirmationCodes;
 import dev.bora.orders.OrderEventView;
 import dev.bora.orders.OrderPage;
+import dev.bora.orders.OrderScope;
 import dev.bora.orders.OrderSnapshots;
 import dev.bora.orders.OrderStatus;
 import dev.bora.orders.OrderSummary;
@@ -39,6 +40,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
@@ -73,6 +75,7 @@ class OrdersService implements OrderSnapshots {
   private final OrderLifecycleService lifecycle;
   private final JsonMapper mapper;
   private final TransactionTemplate transaction;
+  private final TransactionTemplate readTransaction;
 
   OrdersService(
       JdbcClient jdbc,
@@ -95,6 +98,9 @@ class OrdersService implements OrderSnapshots {
     this.lifecycle = lifecycle;
     this.mapper = mapper;
     this.transaction = new TransactionTemplate(manager);
+    this.readTransaction = new TransactionTemplate(manager);
+    this.readTransaction.setReadOnly(true);
+    this.readTransaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
   }
 
   OrderView create(DemoPrincipal user, String key, CreateOrderRequest request) {
@@ -228,7 +234,14 @@ class OrdersService implements OrderSnapshots {
         });
   }
 
-  OrderPage list(DemoPrincipal user, int page, int size) {
+  OrderPage list(
+      DemoPrincipal user,
+      int page,
+      int size,
+      OrderStatus status,
+      String code,
+      OrderScope scope,
+      Instant snapshotAt) {
     requireReader(user);
     if (page < 0 || size < 1 || size > 100 || page > 100_000) {
       throw failure(
@@ -236,23 +249,58 @@ class OrdersService implements OrderSnapshots {
           "INVALID_PAGE",
           "Informe uma página entre 0 e 100000 e um tamanho entre 1 e 100.");
     }
-    long total =
-        jdbc.sql("SELECT count(*) FROM orders o JOIN stores s ON s.id=o.store_id WHERE " + VISIBLE)
-            .param("context", user.contextId())
-            .query(Long.class)
-            .single();
-    List<OrderSummary> items =
-        jdbc.sql(
-                SELECT_ORDER
-                    + " WHERE "
-                    + VISIBLE
-                    + " ORDER BY o.created_at DESC, o.id DESC LIMIT :size OFFSET :offset")
-            .param("context", user.contextId())
-            .param("size", size)
-            .param("offset", (long) page * size)
-            .query((row, index) -> summary(row))
-            .list();
-    return new OrderPage(items, page, size, total, (int) ((total + size - 1) / size));
+    String queryCode = code == null || code.isBlank() ? null : code.strip();
+    if (queryCode != null && !queryCode.matches("[A-Za-z0-9_-]{20,64}")) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "INVALID_ORDER_CODE",
+          "Cole o código público completo do pedido, sem usar o código de confirmação da entrega.");
+    }
+    return readTransaction.execute(
+        ignored -> {
+          Instant now =
+              jdbc.sql("SELECT clock_timestamp()")
+                  .query((row, index) -> row.getTimestamp(1).toInstant())
+                  .single();
+          if (snapshotAt != null && snapshotAt.isAfter(now)) {
+            throw failure(
+                HttpStatus.BAD_REQUEST,
+                "INVALID_ORDER_SNAPSHOT",
+                "Use o instante de consulta retornado pela listagem, sem uma data futura.");
+          }
+          Instant boundary = snapshotAt == null ? now : snapshotAt;
+          String where =
+              " WHERE "
+                  + VISIBLE
+                  + " AND o.created_at<=:snapshot"
+                  + " AND (:scope='ALL' OR (:scope='OWN' AND o.visitor_context_id=:context)"
+                  + " OR (:scope='PUBLIC' AND o.visitor_context_id IS NULL AND s.simulated))"
+                  + " AND (CAST(:status AS varchar) IS NULL OR o.status=:status)"
+                  + " AND (CAST(:code AS varchar) IS NULL OR o.public_code=:code)";
+          var parameters = new java.util.HashMap<String, Object>();
+          parameters.put("context", user.contextId());
+          parameters.put("scope", scope.name());
+          parameters.put("snapshot", java.sql.Timestamp.from(boundary));
+          parameters.put("status", status == null ? null : status.name());
+          parameters.put("code", queryCode);
+          long total =
+              jdbc.sql("SELECT count(*) FROM orders o JOIN stores s ON s.id=o.store_id" + where)
+                  .params(parameters)
+                  .query(Long.class)
+                  .single();
+          List<OrderSummary> items =
+              jdbc.sql(
+                      SELECT_ORDER
+                          + where
+                          + " ORDER BY o.created_at DESC, o.id DESC LIMIT :size OFFSET :offset")
+                  .params(parameters)
+                  .param("size", size)
+                  .param("offset", (long) page * size)
+                  .query((row, index) -> summary(row))
+                  .list();
+          return new OrderPage(
+              items, page, size, total, (int) ((total + size - 1) / size), boundary);
+        });
   }
 
   OrderView detail(DemoPrincipal user, UUID id) {

@@ -59,6 +59,20 @@ progressão da tentativa, e cancelamento preserva a distinção entre etapa inte
 não realizadas. O [guia de mapa e interface](mapa-e-interface.md) descreve o comportamento,
 acessibilidade e limites das medições.
 
+A área da loja e o rastreio público são carregados separadamente da página inicial. A lista
+de pedidos só é consultada quando o visitante a abre. Busca por código e filtros são aplicados
+na API sobre os pedidos autorizados. Cada resposta usa uma leitura consistente para contagem
+e itens; um limite de criação fixa a inclusão de novos pedidos durante a navegação. Isso não
+congela mudanças de estado no banco. A interface mantém a lista apresentada até uma atualização
+explícita, enquanto o detalhe selecionado recebe seus próprios eventos.
+
+O link de rastreio usa um código aleatório de 192 bits e concede apenas os dados daquela
+entrega. O snapshot público omite identidades, ofertas e código de confirmação. Posições
+precisam ser recentes e posteriores à atribuição; pedidos privados deixam de ser rastreáveis
+quando seu contexto expira. O cálculo de rota tem cache limitado e prazo explícito, separado
+da consulta que confere o estado e o acesso. Uma estimativa indica o próximo marco e informa
+quando foi calculada; não representa trânsito em tempo real.
+
 ## Publicação
 
 O ambiente de produção serve a web compilada pelo Caddy. Somente o proxy publica portas na VM;

@@ -109,24 +109,81 @@ test('aceita uma oferta privada e conclui a entrega após conferir o código', a
 
   await page.getByRole('button', { name: 'Aceitar oferta', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Entrega em andamento' })).toBeVisible();
-  await sendPosition(page, order.store.location);
-  await expect(page.getByRole('button', { name: 'Confirmar coleta', exact: true })).toBeEnabled({
-    timeout: 15_000,
-  });
-  await page.getByRole('button', { name: 'Confirmar coleta', exact: true }).click();
-  await expect(page.getByLabel('Código de confirmação', { exact: true })).toBeVisible();
-  await sendPosition(page, order.dropoff);
-  const wrong = String((Number(order.confirmationCode) + 1) % 1_000_000).padStart(6, '0');
-  await page.getByLabel('Código de confirmação', { exact: true }).fill(wrong);
-  await page.getByRole('button', { name: 'Confirmar entrega', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('incorreto');
-  await expect(page.getByRole('heading', { name: 'Entrega em andamento' })).toBeVisible();
-  await page.getByLabel('Código de confirmação', { exact: true }).fill(order.confirmationCode!);
-  await page.getByRole('button', { name: 'Confirmar entrega', exact: true }).click();
-  await expect(
-    page.getByText('Entrega concluída. Você está disponível novamente.', { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Entrega em andamento' })).toHaveCount(0);
+  const trackingContext = await browser.newContext({ baseURL });
+  const tracking = await trackingContext.newPage();
+  const trackingFrames: string[] = [];
+  tracking.on('websocket', (socket) =>
+    socket.on('framereceived', ({ payload }) => trackingFrames.push(String(payload))),
+  );
+  try {
+    await tracking.goto(`/rastreio/${order.publicCode}`);
+    await expect(tracking.getByRole('status')).toHaveText('Entregador a caminho da loja');
+    await expect(tracking.getByText('Código de confirmação', { exact: true })).toHaveCount(0);
+    const beforeMovement = (await (
+      await trackingContext.request.get(`/api/v1/tracking/${order.publicCode}`)
+    ).json()) as components['schemas']['TrackingSnapshot'];
+    expect(beforeMovement.status).toBe('ASSIGNED');
+    const movingPosition = {
+      latitude: order.store.location.latitude - 0.003,
+      longitude: order.store.location.longitude,
+    };
+    await sendPosition(page, movingPosition);
+    await expect
+      .poll(
+        async () =>
+          (
+            (await (
+              await trackingContext.request.get(`/api/v1/tracking/${order.publicCode}`)
+            ).json()) as components['schemas']['TrackingSnapshot']
+          ).courierPosition?.latitude,
+      )
+      .toBeCloseTo(movingPosition.latitude, 5);
+    await expect
+      .poll(() =>
+        trackingFrames.some(
+          (frame) =>
+            frame.includes('"courierPosition"') && frame.includes(String(movingPosition.latitude)),
+        ),
+      )
+      .toBe(true);
+    const inMotion = (await (
+      await trackingContext.request.get(`/api/v1/tracking/${order.publicCode}`)
+    ).json()) as components['schemas']['TrackingSnapshot'];
+    expect(inMotion.courierPosition).not.toEqual(beforeMovement.courierPosition);
+    expect(inMotion.route?.geometry.length).toBeGreaterThan(1);
+    expect(inMotion.etaSeconds).not.toBeNull();
+    await sendPosition(page, order.store.location);
+    await expect(page.getByRole('button', { name: 'Confirmar coleta', exact: true })).toBeEnabled({
+      timeout: 15_000,
+    });
+    await page.getByRole('button', { name: 'Confirmar coleta', exact: true }).click();
+    await expect(page.getByLabel('Código de confirmação', { exact: true })).toBeVisible();
+    await sendPosition(page, order.dropoff);
+    const wrong = String((Number(order.confirmationCode) + 1) % 1_000_000).padStart(6, '0');
+    await page.getByLabel('Código de confirmação', { exact: true }).fill(wrong);
+    await page.getByRole('button', { name: 'Confirmar entrega', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('incorreto');
+    await expect(page.getByRole('heading', { name: 'Entrega em andamento' })).toBeVisible();
+    await page.getByLabel('Código de confirmação', { exact: true }).fill(order.confirmationCode!);
+    await page.getByRole('button', { name: 'Confirmar entrega', exact: true }).click();
+    await expect(
+      page.getByText('Entrega concluída. Você está disponível novamente.', { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Entrega em andamento' })).toHaveCount(0);
+    await expect(tracking.getByRole('status')).toHaveText('Entregue');
+    const publicBody = await tracking.locator('main').textContent();
+    expect(publicBody).not.toContain(order.confirmationCode!);
+    await testInfo.attach('public-tracking-motion.json', {
+      body: JSON.stringify(
+        { beforeMovement, inMotion, trackingFrames: trackingFrames.length },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    });
+  } finally {
+    await trackingContext.close();
+  }
   await chooseRole(page, 'Sou loja');
   await openOrder(page, order.id);
   await expect(page.locator('.order-detail').getByRole('status')).toHaveText('Entregue');

@@ -25,6 +25,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -205,6 +207,185 @@ class OrdersApiIT {
   }
 
   @Test
+  void filtersTheWholeAuthorizedSetByStateExactPublicCodeAndScope() throws Exception {
+    Browser owner = new Browser();
+    owner.login("STORE");
+    JsonNode first = json(owner.post(ORDERS, BODY, "filter-first"));
+    JsonNode canceled = json(owner.post(ORDERS, BODY, "filter-canceled"));
+    assertThat(
+            owner
+                .post(
+                    ORDERS + "/" + canceled.path("id").asString() + "/cancel",
+                    "{\"expectedVersion\":0}",
+                    null)
+                .statusCode())
+        .isEqualTo(200);
+    UUID simulated = insertLegacyOrder(UUID.fromString("20000000-0000-4000-8000-000000000001"));
+    JsonNode own = json(owner.get(ORDERS + "?scope=OWN&size=1"));
+    assertThat(own.path("totalElements").asLong()).isEqualTo(2);
+    assertThat(own.path("totalPages").asInt()).isEqualTo(2);
+    assertThat(own.path("items")).hasSize(1);
+    JsonNode searching = json(owner.get(ORDERS + "?scope=OWN&status=SEARCHING"));
+    assertThat(searching.path("totalElements").asLong()).isEqualTo(1);
+    assertThat(searching.path("items").get(0).path("id").asString())
+        .isEqualTo(first.path("id").asString());
+    JsonNode completed = json(owner.get(ORDERS + "?scope=OWN&status=CANCELED"));
+    assertThat(completed.path("totalElements").asLong()).isEqualTo(1);
+    assertThat(completed.path("items").get(0).path("id").asString())
+        .isEqualTo(canceled.path("id").asString());
+    String code = first.path("publicCode").asString();
+    JsonNode found = json(owner.get(ORDERS + "?scope=OWN&size=1&code=" + code));
+    assertThat(found.path("totalElements").asLong()).isEqualTo(1);
+    assertThat(found.path("items").get(0).path("id").asString())
+        .isEqualTo(first.path("id").asString());
+    assertThat(
+            json(owner.get(ORDERS + "?status=CANCELED&code=" + code))
+                .path("totalElements")
+                .asLong())
+        .isZero();
+    JsonNode publicPage = json(owner.get(ORDERS + "?scope=PUBLIC&size=100"));
+    assertThat(publicPage.path("items").toString())
+        .contains(simulated.toString())
+        .doesNotContain(first.path("id").asString(), canceled.path("id").asString());
+    assertThat(
+            json(owner.get(ORDERS + "?scope=PUBLIC&code=" + code)).path("totalElements").asLong())
+        .isZero();
+    Browser outsider = new Browser();
+    outsider.login("OPERATIONS");
+    assertThat(json(outsider.get(ORDERS + "?code=" + code)).path("totalElements").asLong())
+        .isZero();
+    assertThat(json(outsider.get(ORDERS + "?scope=OWN")).path("totalElements").asLong()).isZero();
+  }
+
+  @Test
+  void keepsCreationBoundaryAndUuidTieOrderAcrossPagesWithoutHidingDirectDetail() throws Exception {
+    Browser browser = new Browser();
+    browser.login("STORE");
+    List<String> ids = new java.util.ArrayList<>();
+    for (int index = 0; index < 3; index++) {
+      ids.add(json(browser.post(ORDERS, BODY, "stable-page-" + index)).path("id").asString());
+    }
+    jdbc.sql(
+            "UPDATE orders SET created_at=statement_timestamp()-interval '1 minute' WHERE visitor_context_id=:context")
+        .param("context", contextOf(browser.userId))
+        .update();
+    List<String> expected = ids.stream().sorted(Comparator.reverseOrder()).toList();
+    JsonNode page = json(browser.get(ORDERS + "?scope=OWN&size=1"));
+    String snapshot = page.path("snapshotAt").asString();
+    assertThat(Instant.parse(snapshot)).isBeforeOrEqualTo(Instant.now());
+    assertThat(page.path("items").get(0).path("id").asString()).isEqualTo(expected.getFirst());
+    String newest = json(browser.post(ORDERS, BODY, "created-after-page")).path("id").asString();
+    for (int index = 0; index < 3; index++) {
+      JsonNode next =
+          json(browser.get(ORDERS + "?scope=OWN&size=1&page=" + index + "&snapshotAt=" + snapshot));
+      assertThat(next.path("totalElements").asLong()).isEqualTo(3);
+      assertThat(next.path("snapshotAt").asString()).isEqualTo(snapshot);
+      assertThat(next.path("items").get(0).path("id").asString()).isEqualTo(expected.get(index));
+    }
+    assertThat(json(browser.get(ORDERS + "?scope=OWN")).path("totalElements").asLong())
+        .isEqualTo(4);
+    assertThat(browser.get(ORDERS + "/" + newest).statusCode()).isEqualTo(200);
+    String selected = expected.getFirst();
+    assertThat(
+            browser
+                .post(ORDERS + "/" + selected + "/cancel", "{\"expectedVersion\":0}", null)
+                .statusCode())
+        .isEqualTo(200);
+    assertThat(json(browser.get(ORDERS + "/" + selected)).path("status").asString())
+        .isEqualTo("CANCELED");
+  }
+
+  @Test
+  void rejectsInvalidFiltersAndFutureBoundariesWithoutChangingAuthorization() throws Exception {
+    Browser browser = new Browser();
+    browser.login("STORE");
+    for (String query :
+        List.of(
+            "status=UNKNOWN",
+            "scope=PRIVATE",
+            "code=123456",
+            "code=%27OR1%3D1",
+            "snapshotAt=tomorrow",
+            "snapshotAt=2999-01-01T00:00:00Z")) {
+      assertThat(browser.get(ORDERS + "?" + query).statusCode()).as(query).isEqualTo(400);
+    }
+    assertThat(
+            json(browser.get(ORDERS + "?scope=OWN&snapshotAt=2000-01-01T00:00:00Z"))
+                .path("totalElements")
+                .asLong())
+        .isZero();
+    browser.login("COURIER");
+    assertThat(browser.get(ORDERS + "?scope=PUBLIC").statusCode()).isEqualTo(403);
+  }
+
+  @Test
+  void findsEachDeliveryStageAcrossTheEntireAuthorizedOrderSet() throws Exception {
+    Browser browser = new Browser();
+    browser.login("STORE");
+    UUID id =
+        UUID.fromString(
+            json(browser.post(ORDERS, BODY, "all-filter-stages")).path("id").asString());
+    UUID courier = UUID.randomUUID();
+    jdbc.sql(
+            """
+            INSERT INTO couriers(id,name,status,location,location_updated_at)
+            VALUES(:id,'Filtro de etapas','AVAILABLE',
+              ST_GeogFromText('SRID=4326;POINT(-46.6559 -23.5614)'),
+              clock_timestamp()-interval '1 minute')
+            """)
+        .param("id", courier)
+        .update();
+    List<String> states = List.of("SEARCHING", "ASSIGNED", "AT_STORE", "PICKED_UP", "DELIVERED");
+    for (int index = 0; index < states.size(); index++) {
+      JsonNode page = json(browser.get(ORDERS + "?scope=OWN&status=" + states.get(index)));
+      assertThat(page.path("totalElements").asLong()).as(states.get(index)).isEqualTo(1);
+      assertThat(page.path("items").get(0).path("id").asString()).isEqualTo(id.toString());
+      switch (index) {
+        case 0 -> lifecycle.assign(id, 0, courier, "test:filter-assign");
+        case 1 -> lifecycle.arriveAtStore(id, 1, "test:filter-arrive");
+        case 2 -> lifecycle.pickUp(id, 2, "test:filter-pickup");
+        case 3 -> lifecycle.deliver(id, 3, "test:filter-deliver");
+        default -> {}
+      }
+    }
+  }
+
+  @Test
+  void keepsCountAndItemsConsistentWhenAStatusChangesBetweenTheTwoQueries() throws Exception {
+    Browser browser = new Browser();
+    browser.login("STORE");
+    UUID id =
+        UUID.fromString(json(browser.post(ORDERS, BODY, "read-page-race")).path("id").asString());
+    AtomicBoolean transitioned = new AtomicBoolean();
+    doAnswer(
+            call -> {
+              String sql = call.getArgument(0);
+              if (sql.startsWith("SELECT o.id,")
+                  && sql.contains("LIMIT :size")
+                  && transitioned.compareAndSet(false, true)) {
+                try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                  executor
+                      .submit(() -> lifecycle.cancelByStore(id, 0, "test:between-page-queries"))
+                      .get(10, TimeUnit.SECONDS);
+                }
+              }
+              return call.callRealMethod();
+            })
+        .when(jdbc)
+        .sql(anyString());
+    JsonNode page = json(browser.get(ORDERS + "?scope=OWN&status=SEARCHING"));
+    assertThat(transitioned).isTrue();
+    assertThat(page.path("totalElements").asLong()).isEqualTo(1);
+    assertThat(page.path("items")).hasSize(1);
+    assertThat(page.path("items").get(0).path("status").asString()).isEqualTo("SEARCHING");
+    assertThat(
+            json(browser.get(ORDERS + "?scope=OWN&status=SEARCHING"))
+                .path("totalElements")
+                .asLong())
+        .isZero();
+  }
+
+  @Test
   @Timeout(40)
   void serializesSameKeyAndEnforcesFiveActiveOrdersAcrossConcurrentRequests() throws Exception {
     Browser browser = new Browser();
@@ -302,6 +483,54 @@ class OrdersApiIT {
     browser.login("COURIER");
     assertThat(browser.get(ORDERS).statusCode()).isEqualTo(403);
     assertThat(browser.post(ORDERS, BODY, "courier").statusCode()).isEqualTo(403);
+  }
+
+  @Test
+  @Timeout(40)
+  void capturesTrackingReadTimeBeforeAnExpensiveRouteFinishes() throws Exception {
+    Browser owner = new Browser();
+    owner.login("STORE");
+    JsonNode created = json(owner.post(ORDERS, BODY, "tracking-observed-at"));
+    String path = "/api/v1/tracking/" + created.path("publicCode").asString();
+    var entered = new java.util.concurrent.CountDownLatch(1);
+    var release = new java.util.concurrent.CountDownLatch(1);
+    doAnswer(
+            call -> {
+              GeoPoint origin = call.getArgument(0);
+              GeoPoint destination = call.getArgument(1);
+              entered.countDown();
+              if (!release.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("O teste não liberou o cálculo de rota.");
+              }
+              return new Route(
+                  List.of(origin, destination),
+                  1_000,
+                  Duration.ofSeconds(120),
+                  Duration.ofSeconds(40),
+                  new SnappedPoint(origin, origin, 0),
+                  new SnappedPoint(destination, destination, 0));
+            })
+        .when(routing)
+        .route(any(), any());
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var pending = executor.submit(() -> new Browser().get(path));
+      Instant afterRead;
+      try {
+        assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+        // Mesmo relógio do SELECT do snapshot, sem depender do relógio Windows ou de sleeps.
+        afterRead =
+            jdbc.sql("SELECT clock_timestamp()")
+                .query((row, index) -> row.getTimestamp(1).toInstant())
+                .single();
+      } finally {
+        release.countDown();
+      }
+      HttpResponse<String> response = pending.get(10, TimeUnit.SECONDS);
+      assertThat(response.statusCode()).isEqualTo(200);
+      JsonNode tracked = json(response);
+      assertThat(Instant.parse(tracked.path("serverTime").asString())).isBefore(afterRead);
+      assertThat(tracked.path("route").path("geometry")).hasSize(2);
+    }
   }
 
   @Test

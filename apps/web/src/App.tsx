@@ -7,8 +7,46 @@ import './home.css';
 const DemoPanel = lazy(() =>
   import('@/components/demo-panel').then((module) => ({ default: module.DemoPanel })),
 );
+const StorePage = lazy(() =>
+  import('@/components/workspace-page').then((module) => ({ default: module.StorePage })),
+);
+const PublicTrackingPage = lazy(() =>
+  import('@/components/public-tracking').then((module) => ({ default: module.PublicTrackingPage })),
+);
 
 export function App() {
+  if (typeof window !== 'undefined' && window.location.pathname === '/loja') {
+    return (
+      <Suspense
+        fallback={
+          <main className="tracking-route-loading" role="status">
+            Preparando a área da loja...
+          </main>
+        }
+      >
+        <StorePage />
+      </Suspense>
+    );
+  }
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/rastreio/')) {
+    let code = '';
+    try {
+      code = decodeURIComponent(window.location.pathname.slice('/rastreio/'.length));
+    } catch {
+      /* Invalid encoded links show the same safe error page. */
+    }
+    return (
+      <Suspense
+        fallback={
+          <main className="tracking-route-loading" role="status">
+            Preparando o rastreio da entrega...
+          </main>
+        }
+      >
+        <PublicTrackingPage code={code} />
+      </Suspense>
+    );
+  }
   return (
     <div className="home-shell">
       <a className="skip-link" href="#main-content">

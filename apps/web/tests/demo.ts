@@ -18,47 +18,24 @@ export async function chooseRole(page: Page, label: string) {
 }
 
 export async function openOrder(page: Page, id: string) {
+  const detail = page.locator('.order-detail');
+  if (await detail.isVisible()) {
+    if ((await detail.getAttribute('data-order-id')) === id) return;
+    await detail.getByRole('button', { name: 'Voltar', exact: true }).click();
+  }
+  if (!(await page.getByRole('heading', { name: 'Pedidos', exact: true }).isVisible())) {
+    await page.getByRole('button', { name: 'Ver pedidos', exact: true }).click();
+  }
   await expect(page.getByRole('heading', { name: 'Pedidos', exact: true })).toBeVisible();
   await expect(page.getByText('Carregando pedidos...', { exact: true })).toHaveCount(0);
+  const order = await page.request.get(`/api/v1/orders/${id}`);
+  expect(order.status()).toBe(200);
+  const reference = (await order.json()) as { publicCode: string };
+  await page.getByRole('combobox', { name: 'Mostrar', exact: true }).selectOption('ALL');
+  await page.getByRole('combobox', { name: 'Status do pedido', exact: true }).selectOption('');
+  await page.getByLabel('Código do pedido', { exact: true }).fill(reference.publicCode);
+  await page.getByRole('button', { name: 'Buscar pedido', exact: true }).click();
   const row = page.locator(`.order-list-button[data-order-id="${id}"]`);
-  const next = page.getByRole('button', { name: 'Próxima', exact: true });
-  if (!(await row.count())) {
-    // Um POST externo pode terminar antes de a invalidação por WS atualizar a página.
-    // Recarregue o snapshot atual antes de avançar, para não saltar o pedido recém-criado.
-    const response = page.waitForResponse(
-      (value) =>
-        value.request().method() === 'GET' && new URL(value.url()).pathname === '/api/v1/orders',
-    );
-    await page.getByRole('button', { name: 'Atualizar', exact: true }).click();
-    expect((await response).status()).toBe(200);
-    await expect(page.getByRole('button', { name: 'Atualizar', exact: true })).toBeEnabled();
-  }
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    if (await row.count()) {
-      await row.click();
-      return;
-    }
-    if (!(await next.count())) {
-      await expect(row).toBeVisible();
-      await row.click();
-      return;
-    }
-    await expect(next).toBeEnabled();
-    const label = await page.locator('.pagination').innerText();
-    const currentPage = Number(/Página\s+(\d+)/.exec(label)?.[1]);
-    expect(currentPage).toBeGreaterThan(0);
-    const response = page.waitForResponse((value) => {
-      const url = new URL(value.url());
-      return (
-        value.request().method() === 'GET' &&
-        url.pathname === '/api/v1/orders' &&
-        url.searchParams.get('page') === String(currentPage)
-      );
-    });
-    await next.click();
-    expect((await response).status()).toBe(200);
-    await expect(page.locator('.pagination')).toContainText(`Página ${currentPage + 1} de`);
-  }
-  throw new Error('Não encontramos o pedido de teste na lista paginada.');
+  await expect(row).toBeVisible();
+  await row.click();
 }

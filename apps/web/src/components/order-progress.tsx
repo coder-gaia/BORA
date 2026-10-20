@@ -1,11 +1,11 @@
 import { useId, useRef, useState } from 'react';
 import { Check, Circle, X } from 'lucide-react';
-import type { OrderView } from '@/lib/api';
 import {
   deliveryProgress,
   eventCategory,
   eventLabel,
   type DeliveryStageKey,
+  type ProgressOrder,
 } from '@/lib/order-progress';
 import './order-progress.css';
 
@@ -34,7 +34,13 @@ function time(value: string) {
   });
 }
 
-export function OrderProgress({ order }: { order: OrderView }) {
+export function OrderProgress({
+  order,
+  publicView = false,
+}: {
+  order: ProgressOrder;
+  publicView?: boolean;
+}) {
   const id = useId();
   const history = useRef<HTMLDetailsElement>(null);
   const [inspected, inspect] = useState<DeliveryStageKey | null>(null);
@@ -154,8 +160,9 @@ export function OrderProgress({ order }: { order: OrderView }) {
           Histórico de eventos <span>{model.events.length}</span>
         </summary>
         <p className="delivery-history-explanation">
-          Registros de todas as tentativas, incluindo ofertas e ajustes. Uma oferta não conclui uma
-          etapa da entrega.
+          {publicView
+            ? 'Marcos públicos deste percurso, incluindo retomadas de busca e cancelamentos.'
+            : 'Registros de todas as tentativas, incluindo ofertas e ajustes. Uma oferta não conclui uma etapa da entrega.'}
         </p>
         <ol className="order-timeline" aria-label="Histórico registrado do pedido">
           {model.events.map((event) => (

@@ -2,7 +2,8 @@ import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { expect, test, type APIRequestContext } from '@playwright/test';
-import { chooseRole } from './demo';
+import { chooseRole, openOrder } from './demo';
+import type { components } from '../src/generated/api';
 
 const execute = promisify(execFile);
 const root = fileURLToPath(new URL('../../../', import.meta.url));
@@ -59,6 +60,9 @@ test('reconecta nas duas instâncias sem perder sessão ou snapshot', async ({
   const errors: string[] = [];
   const failedResponses: { path: string; status: number }[] = [];
   let snapshots = 0;
+  let privateId = '';
+  let privateSnapshots = 0;
+  const privateFrames: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('response', (response) => {
     const path = new URL(response.url()).pathname;
@@ -78,10 +82,15 @@ test('reconecta nas duas instâncias sem perder sessão ou snapshot', async ({
     });
     socket.on('framereceived', ({ payload }) => {
       if (String(payload).startsWith('CONNECTED')) state.connected = true;
+      if (privateId && String(payload).includes(`"id":"${privateId}"`))
+        privateFrames.push(String(payload));
     });
   });
   page.on('request', (value) => {
-    if (value.method() === 'GET' && new URL(value.url()).pathname === '/api/v1/orders') snapshots++;
+    if (value.method() !== 'GET') return;
+    const path = new URL(value.url()).pathname;
+    if (path === '/api/v1/auth/me') snapshots++;
+    if (privateId && path === `/api/v1/orders/${privateId}`) privateSnapshots++;
   });
   const recoveries: { stopped: string; snapshots: number; connections: number }[] = [];
   try {
@@ -97,6 +106,18 @@ test('reconecta nas duas instâncias sem perder sessão ou snapshot', async ({
     const original = (await (await page.request.get('/api/v1/auth/me')).json()) as {
       user: { id: string; role: string };
     };
+    const csrfResponse = await page.request.get('/api/v1/auth/csrf');
+    const csrf = (await csrfResponse.json()) as { headerName: string; token: string };
+    const creation = await page.request.post('/api/v1/orders', {
+      data: { dropoff: { latitude: -23.5504, longitude: -46.6333 } },
+      headers: { [csrf.headerName]: csrf.token, 'Idempotency-Key': crypto.randomUUID() },
+    });
+    expect(creation.status()).toBe(201);
+    const order = (await creation.json()) as components['schemas']['OrderView'];
+    privateId = order.id;
+    await openOrder(page, order.id);
+    await expect(page.locator('.confirmation-code')).toHaveText(order.confirmationCode!);
+    await expect.poll(() => privateFrames.length).toBeGreaterThan(0);
     await service('start', 'api2');
     await ready(request, 'api2');
     for (const stopped of ['api1', 'api2'] as const) {
@@ -105,6 +126,8 @@ test('reconecta nas duas instâncias sem perder sessão ou snapshot', async ({
         .at(-1);
       expect(previous).toBeDefined();
       const snapshotCount = snapshots;
+      const privateSnapshotCount = privateSnapshots;
+      const privateFrameCount = privateFrames.length;
       const connectedCount = sockets.filter((socket) => socket.private && socket.connected).length;
       await service('stop', stopped);
       await expect.poll(() => previous!.closed, { timeout: 15_000 }).toBe(true);
@@ -118,10 +141,17 @@ test('reconecta nas duas instâncias sem perder sessão ou snapshot', async ({
         'connected',
       );
       await expect.poll(() => snapshots, { timeout: 10_000 }).toBeGreaterThan(snapshotCount);
+      await expect
+        .poll(() => privateSnapshots, { timeout: 10_000 })
+        .toBeGreaterThan(privateSnapshotCount);
+      await expect
+        .poll(() => privateFrames.length, { timeout: 10_000 })
+        .toBeGreaterThan(privateFrameCount);
       const current = (await (await page.request.get('/api/v1/auth/me')).json()) as typeof original;
       expect(current.user.id).toBe(original.user.id);
       expect(current.user.role).toBe(original.user.role);
-      await expect(page.getByRole('heading', { name: 'Novo pedido' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Detalhe do pedido' })).toBeVisible();
+      await expect(page.locator('.confirmation-code')).toHaveText(order.confirmationCode!);
       await expect(page.getByRole('alert')).toHaveCount(0);
       recoveries.push({
         stopped,
@@ -134,7 +164,17 @@ test('reconecta nas duas instâncias sem perder sessão ou snapshot', async ({
     expect(errors).toEqual([]);
     expect(failedResponses).toEqual([]);
     await testInfo.attach('recovery.json', {
-      body: JSON.stringify({ recoveries, errors, failedResponses }, null, 2),
+      body: JSON.stringify(
+        {
+          recoveries,
+          errors,
+          failedResponses,
+          privateSnapshots,
+          privateFrames: privateFrames.length,
+        },
+        null,
+        2,
+      ),
       contentType: 'application/json',
     });
   } finally {

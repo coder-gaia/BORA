@@ -63,8 +63,7 @@ test('recebe mudanças pelo WebSocket e recupera o snapshot após perder a rede'
   await expect(page.locator('.connection-status')).toHaveAttribute('data-connection', 'connected');
   const order = await createOutsideInterface(page);
   const button = page.locator(`.order-list-button[data-order-id="${order.id}"]`);
-  await expect(button).toBeVisible({ timeout: 5_000 });
-  await button.click();
+  await openOrder(page, order.id);
   await expect(page.locator('.order-detail').getByRole('status')).toHaveText(
     'Procurando entregador',
   );
@@ -81,7 +80,7 @@ test('recebe mudanças pelo WebSocket e recupera o snapshot após perder a rede'
   await page.unroute(`**/api/v1/orders/${order.id}`);
   // Com a conexão ativa, o intervalo antigo de dois/três segundos deixa de consultar o servidor.
   suppressListEvents = true;
-  await expect(page.getByRole('button', { name: 'Atualizar', exact: true })).toBeEnabled();
+  await expect(button).toHaveCount(1);
   const settledQueries = listQueries;
   await page.waitForTimeout(3_500);
   expect(listQueries).toBe(settledQueries);

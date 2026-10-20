@@ -154,6 +154,51 @@ histórico pode ser aberto pelo teclado. Na tela estreita, a sequência passa pa
 vertical. O mapa também oferece controles de zoom, instruções de teclado e gesto cooperativo
 para evitar capturar a rolagem da página por acidente.
 
+## Loja e consulta de pedidos
+
+A rota `/loja` abre uma área dedicada. Visitar o endereço não cria uma identidade nem troca
+o papel da sessão: a entrada acontece pelo botão da loja. A página inicial mantém o mapa e
+suas entradas de demonstração.
+
+**Novo pedido** apresenta a origem e um mapa para escolher o destino. É possível clicar no
+mapa, usar o centro após navegar pelo teclado ou preencher latitude e longitude. A API continua
+validando área atendida e acesso por via. O mapa não substitui essas validações.
+
+Depois de criar, a confirmação aparece junto ao formulário, com o código do pedido e a ação
+**Acompanhar pedido**. O detalhe só abre por essa ação ou pela seleção de um pedido na lista.
+Ele ocupa uma área própria, com título e foco previsíveis, em vez de ser acrescentado depois
+de uma lista longa.
+
+**Ver pedidos** abre a consulta e seus controles. A loja começa em **Meus pedidos**; o visitante
+pode escolher **Cenário simulado** ou o conjunto dos dois. O filtro por estado inclui busca,
+trajeto até a loja, chegada, entrega em andamento, entrega concluída e cancelamento. A busca
+usa o código público completo do pedido, respeitando maiúsculas e minúsculas. Esse código
+não é o código secreto de seis dígitos usado na confirmação da entrega.
+
+Busca e filtros são aplicados pelo servidor sobre todo o conjunto autorizado, antes da
+paginação. Novidades sinalizam que há atualizações disponíveis; a lista apresentada muda
+quando o visitante pede uma atualização. O detalhe mantém seu próprio acompanhamento ao
+vivo. **Voltar** restaura a consulta, os filtros e a página que estavam abertos.
+
+## Rastreio de uma entrega
+
+O detalhe permite abrir ou copiar o link `/rastreio/<codigo>`. Outra pessoa pode abri-lo sem
+escolher um papel. O link concede somente o progresso daquele pedido: coleta, destino,
+etapas, posição recente do entregador e, quando disponível, a rota e a estimativa até o
+próximo marco. O código de confirmação, as identidades e os detalhes internos das ofertas
+não são apresentados.
+
+O tempo exibido considera a velocidade da demonstração e a data de cálculo da rota. Não é
+uma previsão de trânsito. Uma posição desatualizada deixa de aparecer; se a rota não puder
+ser calculada naquele momento, o estado e a linha do tempo continuam disponíveis. Depois
+de entrega ou cancelamento, o acompanhamento mostra o encerramento, sem reutilizar posição
+do entregador em outro trabalho.
+
+O rastreio usa STOMP e consulta HTTP durante recuperação de conexão. Um link inexistente
+ou de contexto expirado mostra indisponibilidade e encerra o acompanhamento daquele código.
+Em uma falha temporária de rede, o último estado válido pode permanecer visível, identificado
+como uma atualização anterior.
+
 ## Publicação e política de conteúdo
 
 A política de produção permite `https://tiles.openfreemap.org` em `connect-src` e `img-src` para
@@ -179,8 +224,11 @@ Com o [ambiente local](../README.md#executar-localmente) em execução:
    Bloqueie somente o WebSocket, mantendo HTTP disponível; confira recuperação por snapshot e
    reconexão. Bloqueie os recursos externos e confira a recuperação da exploração. Teste a
    falha da imagem da prévia sem bloquear o restante da demonstração.
-4. Entre como loja e crie um pedido antes de deixar seu entregador disponível. Guarde o código
-   de confirmação da loja; ele permanece oculto no papel de entregador.
+4. Abra `/loja` e entre como loja. Confira que a lista e seus filtros só aparecem ao clicar
+   em **Ver pedidos**. Crie um pedido antes de deixar seu entregador disponível e use
+   **Acompanhar pedido**. Guarde o código de confirmação da loja; ele permanece oculto no
+   papel de entregador. Busque o pedido pelo código público e teste os filtros. Confira que
+   novidades não mudam a ordem ou o foco da consulta aberta.
 5. Como entregador, aceite a oferta, informe posição na coleta e aguarde a chegada confirmada.
    Confira a sequência na loja e no entregador, confirme a coleta e conclua com o código.
 6. Em outro pedido, use a operação para redistribuir durante uma etapa permitida. Confira o
@@ -188,6 +236,9 @@ Com o [ambiente local](../README.md#executar-localmente) em execução:
    confira que as etapas seguintes continuam não realizadas.
 7. Percorra marcos, descrição e histórico somente pelo teclado. Em tela estreita, confira a
    sequência vertical e a legibilidade das datas e dos controles.
+8. Abra o rastreio em outra sessão de navegador. Confira etapas, mapa, posição e estimativa
+   sem entrar em um papel. A confirmação da entrega deve encerrar o trajeto nas duas sessões.
+   Confira também um código inexistente e a recuperação após interromper a conexão.
 
 As ações e permissões detalhadas estão no [guia de identidade e pedidos](identidade-e-pedidos.md)
 e no [guia de entregadores](entregadores-e-posicoes.md). A validação de CSP precisa usar também

@@ -12,6 +12,7 @@ export type CourierWorkView = components['schemas']['CourierWorkView'];
 export type CourierRouteView = components['schemas']['CourierRouteView'];
 export type CourierOfferInbox = components['schemas']['CourierOfferInbox'];
 export type CourierOffer = components['schemas']['CourierOffer'];
+export type TrackingSnapshot = components['schemas']['TrackingSnapshot'];
 type SimulationConfig = components['schemas']['SimulationConfig'];
 type CourierView = components['schemas']['CourierView'];
 type GeoPoint = components['schemas']['GeoPoint'];
@@ -113,10 +114,24 @@ export const api = {
     return api.session();
   },
   store: (signal?: AbortSignal) => request<StoreView>('/api/v1/stores/me', { signal }),
-  orders: (page: number, signal?: AbortSignal) =>
-    request<OrderPage>(`/api/v1/orders?page=${page}&size=10`, { signal }),
+  orders: (
+    page: number,
+    signal?: AbortSignal,
+    filters: {
+      status?: OrderView['status'];
+      code?: string;
+      scope?: 'OWN' | 'PUBLIC' | 'ALL';
+      snapshotAt?: string;
+    } = {},
+  ) => {
+    const params = new URLSearchParams({ page: String(page), size: '10' });
+    for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value);
+    return request<OrderPage>(`/api/v1/orders?${params}`, { signal });
+  },
   order: (id: string, signal?: AbortSignal) =>
     request<OrderView>(`/api/v1/orders/${encodeURIComponent(id)}`, { signal }),
+  tracking: (code: string, signal?: AbortSignal) =>
+    request<TrackingSnapshot>(`/api/v1/tracking/${encodeURIComponent(code)}`, { signal }),
   createOrder: (dropoff: NonNullable<CreateOrderRequest['dropoff']>, key: string) =>
     post<OrderView>('/api/v1/orders', { dropoff } satisfies CreateOrderRequest, {
       'Idempotency-Key': key,

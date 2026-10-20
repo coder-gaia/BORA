@@ -2,7 +2,9 @@ package dev.bora.orders.internal;
 
 import dev.bora.identity.CurrentUser;
 import dev.bora.orders.OrderPage;
+import dev.bora.orders.OrderScope;
 import dev.bora.orders.OrderSnapshots;
+import dev.bora.orders.OrderStatus;
 import dev.bora.orders.OrderView;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -10,6 +12,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import java.net.URI;
+import java.time.Instant;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -59,10 +62,18 @@ class OrdersController {
       operationId = "listOrders",
       summary = "Listar pedidos visíveis",
       description =
-          "Mostra pedidos do contexto do visitante e pedidos públicos das lojas simuladas.")
+          "Filtra todo o conjunto autorizado por estado, código público exato e escopo. "
+              + "Reutilize snapshotAt nas próximas páginas para excluir novas criações; "
+              + "os estados continuam atuais. OWN mostra o próprio contexto, PUBLIC o cenário "
+              + "simulado e ALL combina ambos.")
   OrderPage list(
-      @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
-    return orders.list(currentUser.require(), page, size);
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "20") int size,
+      @RequestParam(required = false) OrderStatus status,
+      @RequestParam(required = false) String code,
+      @RequestParam(defaultValue = "ALL") OrderScope scope,
+      @RequestParam(required = false) Instant snapshotAt) {
+    return orders.list(currentUser.require(), page, size, status, code, scope, snapshotAt);
   }
 
   @GetMapping("/{id}")

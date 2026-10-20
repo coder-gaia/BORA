@@ -1,6 +1,7 @@
 import type { OrderView } from '@/lib/api';
 
 export type OrderEvent = OrderView['timeline'][number];
+export type ProgressOrder = Pick<OrderView, 'status' | 'createdAt' | 'timeline'>;
 export type DeliveryStageKey = Exclude<OrderView['status'], 'CANCELED'>;
 export type DeliveryStageState =
   'completed' | 'current' | 'upcoming' | 'interrupted' | 'not-reached';
@@ -75,7 +76,7 @@ function last<T>(values: T[], matches: (value: T) => boolean) {
   return undefined;
 }
 
-export function deliveryProgress(order: OrderView) {
+export function deliveryProgress(order: ProgressOrder) {
   // O identificador persistido mantém a ordem dos registros mesmo com relógios divergentes.
   const events = [...order.timeline].sort((left, right) => left.id - right.id);
   const reassigned = events.filter((event) => event.type === 'ORDER_REASSIGNED');

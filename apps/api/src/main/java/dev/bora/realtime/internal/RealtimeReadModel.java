@@ -5,23 +5,37 @@ import dev.bora.identity.DemoRole;
 import dev.bora.orders.OrderStatus;
 import dev.bora.realtime.MapFrame;
 import dev.bora.realtime.MapViewport;
+import dev.bora.realtime.TrackingEvent;
+import dev.bora.realtime.TrackingRoute;
 import dev.bora.realtime.TrackingSnapshot;
 import dev.bora.routing.GeoPoint;
 import dev.bora.shared.ApiException;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 class RealtimeReadModel {
   private final JdbcClient jdbc;
   private final Clock clock;
+  private final TrackingRoutes routes;
+  private final TransactionTemplate readTransaction;
 
-  RealtimeReadModel(JdbcClient jdbc, Clock clock) {
+  RealtimeReadModel(
+      JdbcClient jdbc, Clock clock, TrackingRoutes routes, PlatformTransactionManager manager) {
     this.jdbc = jdbc;
     this.clock = clock;
+    this.routes = routes;
+    this.readTransaction = new TransactionTemplate(manager);
+    this.readTransaction.setReadOnly(true);
+    this.readTransaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
   }
 
   boolean active(DemoPrincipal principal) {
@@ -102,31 +116,108 @@ class RealtimeReadModel {
     if (code == null || !code.matches("[A-Za-z0-9_-]{20,64}")) {
       throw missing();
     }
+    TrackingState state =
+        readTransaction.execute(
+            ignored -> {
+              TrackingState order = trackingState(code);
+              List<TrackingEvent> timeline =
+                  jdbc.sql(
+                          """
+                  SELECT type,payload->>'from' from_status,payload->>'to' to_status,
+                    occurred_at,order_version
+                  FROM order_events WHERE order_id=:id AND order_version<=:version
+                    AND type IN ('ORDER_CREATED','ORDER_ASSIGNED','ORDER_AT_STORE',
+                      'ORDER_PICKED_UP','ORDER_DELIVERED','ORDER_CANCELED','ORDER_REASSIGNED')
+                    AND payload->>'to' IN ('SEARCHING','ASSIGNED','AT_STORE','PICKED_UP','DELIVERED','CANCELED')
+                  ORDER BY occurred_at,id
+                  """)
+                      .param("id", order.id())
+                      .param("version", order.version())
+                      .query(
+                          (row, index) ->
+                              new TrackingEvent(
+                                  row.getString("type"),
+                                  row.getString("from_status") == null
+                                      ? null
+                                      : OrderStatus.valueOf(row.getString("from_status")),
+                                  OrderStatus.valueOf(row.getString("to_status")),
+                                  row.getTimestamp("occurred_at").toInstant(),
+                                  row.getLong("order_version")))
+                      .list();
+              return order.withTimeline(timeline);
+            });
+    // O cálculo de rota fica fora da transação e não guarda autorização nem snapshots privados.
+    TrackingRoute route =
+        routes.route(
+            state.id(),
+            state.version(),
+            state.status(),
+            state.courierId(),
+            state.pickup(),
+            state.dropoff(),
+            state.courierPosition());
+    Long eta =
+        route != null
+                && (state.status() == OrderStatus.ASSIGNED
+                    || state.status() == OrderStatus.PICKED_UP)
+            ? (long) Math.ceil(route.simulatedDurationMillis() / 1000.0)
+            : null;
+    return new TrackingSnapshot(
+        state.status(),
+        state.version(),
+        state.storeName(),
+        state.pickup(),
+        state.dropoff(),
+        state.courierPosition(),
+        state.courierPositionUpdatedAt(),
+        state.createdAt(),
+        state.timeline(),
+        route,
+        eta,
+        state.observedAt());
+  }
+
+  private TrackingState trackingState(String code) {
     return jdbc.sql(
             """
-        SELECT o.status,o.version,s.name,ST_Y(s.location::geometry) pickup_lat,
+        SELECT o.id,o.status,o.version,o.courier_id,o.created_at,statement_timestamp() observed_at,
+          s.name,ST_Y(s.location::geometry) pickup_lat,
           ST_X(s.location::geometry) pickup_lon,ST_Y(o.dropoff::geometry) dropoff_lat,
           ST_X(o.dropoff::geometry) dropoff_lon,
           CASE WHEN c.location_updated_at>=clock_timestamp()-interval '30 seconds'
+             AND c.location_updated_at>=o.assigned_at
              AND o.status IN ('ASSIGNED','AT_STORE','PICKED_UP') THEN ST_Y(c.location::geometry) END courier_lat,
           CASE WHEN c.location_updated_at>=clock_timestamp()-interval '30 seconds'
-             AND o.status IN ('ASSIGNED','AT_STORE','PICKED_UP') THEN ST_X(c.location::geometry) END courier_lon
+             AND c.location_updated_at>=o.assigned_at
+             AND o.status IN ('ASSIGNED','AT_STORE','PICKED_UP') THEN ST_X(c.location::geometry) END courier_lon,
+          CASE WHEN c.location_updated_at>=clock_timestamp()-interval '30 seconds'
+             AND c.location_updated_at>=o.assigned_at AND c.location IS NOT NULL
+             AND o.status IN ('ASSIGNED','AT_STORE','PICKED_UP') THEN c.location_updated_at END position_updated_at
         FROM orders o JOIN stores s ON s.id=o.store_id LEFT JOIN couriers c ON c.id=o.courier_id
         WHERE o.public_code=:code
+          AND (o.visitor_context_id IS NULL OR EXISTS(SELECT 1 FROM demo_contexts d
+            WHERE d.id=o.visitor_context_id AND d.expires_at>d.created_at AND d.expires_at>clock_timestamp()))
         """)
         .param("code", code)
         .query(
             (row, i) ->
-                new TrackingSnapshot(
+                new TrackingState(
+                    row.getObject("id", UUID.class),
                     OrderStatus.valueOf(row.getString("status")),
                     row.getLong("version"),
+                    row.getObject("courier_id", UUID.class),
                     row.getString("name"),
                     new GeoPoint(row.getDouble("pickup_lat"), row.getDouble("pickup_lon")),
                     new GeoPoint(row.getDouble("dropoff_lat"), row.getDouble("dropoff_lon")),
                     row.getObject("courier_lat") == null
                         ? null
                         : new GeoPoint(row.getDouble("courier_lat"), row.getDouble("courier_lon")),
-                    clock.instant()))
+                    row.getTimestamp("position_updated_at") == null
+                        ? null
+                        : row.getTimestamp("position_updated_at").toInstant(),
+                    row.getTimestamp("created_at").toInstant(),
+                    row.getTimestamp("observed_at").toInstant(),
+                    List.of()))
         .optional()
         .orElseThrow(RealtimeReadModel::missing);
   }
@@ -158,5 +249,35 @@ class RealtimeReadModel {
   private static ApiException missing() {
     return new ApiException(
         HttpStatus.NOT_FOUND, "TRACKING_NOT_FOUND", "Não encontramos este rastreio.");
+  }
+
+  private record TrackingState(
+      UUID id,
+      OrderStatus status,
+      long version,
+      UUID courierId,
+      String storeName,
+      GeoPoint pickup,
+      GeoPoint dropoff,
+      GeoPoint courierPosition,
+      Instant courierPositionUpdatedAt,
+      Instant createdAt,
+      Instant observedAt,
+      List<TrackingEvent> timeline) {
+    TrackingState withTimeline(List<TrackingEvent> events) {
+      return new TrackingState(
+          id,
+          status,
+          version,
+          courierId,
+          storeName,
+          pickup,
+          dropoff,
+          courierPosition,
+          courierPositionUpdatedAt,
+          createdAt,
+          observedAt,
+          events);
+    }
   }
 }

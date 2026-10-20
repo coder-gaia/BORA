@@ -3,6 +3,7 @@ package dev.bora.realtime;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.bora.BoraApplication;
+import dev.bora.orders.internal.OrderLifecycleService;
 import dev.bora.realtime.internal.PostgresChangeBridge;
 import dev.bora.routing.RoutingTools;
 import java.net.CookieManager;
@@ -471,15 +472,133 @@ class RealtimeClusterIT {
       HttpResponse<String> tracked = anonymous.get(secondPort, path);
       assertThat(tracked.statusCode()).isEqualTo(200);
       assertThat(tracked.body())
-          .contains("SEARCHING", "pickup", "dropoff")
-          .doesNotContain("confirmation", "owner", "userId", "context", "timeline", "publicCode");
+          .contains("SEARCHING", "pickup", "dropoff", "timeline", "ORDER_CREATED")
+          .doesNotContain(
+              "confirmation", "owner", "userId", "context", "publicCode", "actor", "payload");
+      JsonNode snapshot = JSON.readTree(tracked.body());
+      assertThat(snapshot.path("createdAt").asString())
+          .isEqualTo(order.path("createdAt").asString());
+      assertThat(snapshot.path("courierPosition").isNull()).isTrue();
+      assertThat(snapshot.path("courierPositionUpdatedAt").isNull()).isTrue();
+      assertThat(snapshot.path("etaSeconds").isNull()).isTrue();
+      assertThat(snapshot.path("route").path("destination").asString()).isEqualTo("DROPOFF");
+      assertThat(snapshot.path("timeline").get(0).has("id")).isFalse();
+      assertThat(snapshot.has("id")).isFalse();
       assertThat(anonymous.get(secondPort, "/api/v1/tracking/not-enumerable").statusCode())
+          .isEqualTo(404);
+      assertThat(
+              anonymous
+                  .get(secondPort, "/api/v1/tracking/" + order.path("id").asString())
+                  .statusCode())
+          .isEqualTo(404);
+      assertThat(
+              anonymous
+                  .get(secondPort, "/api/v1/tracking/" + order.path("confirmationCode").asString())
+                  .statusCode())
+          .isEqualTo(404);
+      assertThat(
+              anonymous
+                  .get(
+                      secondPort,
+                      "/api/v1/tracking/" + UUID.randomUUID().toString().replace("-", ""))
+                  .statusCode())
           .isEqualTo(404);
       anonymous.csrf();
       try (Socket socket = anonymous.socket(true)) {
         socket.subscribe("tracking", "/topic/tracking/" + code);
         assertThat(socket.message("tracking")).contains("SEARCHING").doesNotContain("confirmation");
+        first
+            .getBean(OrderLifecycleService.class)
+            .cancelByStore(UUID.fromString(order.path("id").asString()), 0, "test:private-actor");
+        String canceled = socket.message("tracking");
+        assertThat(canceled)
+            .contains("CANCELED", "ORDER_CANCELED")
+            .doesNotContain("confirmation", "private-actor", "actor", "payload", "publicCode");
       }
+    }
+  }
+
+  @Test
+  void tracksTheAssignedCourierAndNextRouteWithoutExposingStaleOrCompletedPositions()
+      throws Exception {
+    try (Browser owner = new Browser();
+        Browser anonymous = new Browser()) {
+      owner.login("STORE");
+      JsonNode created = owner.create(secondPort);
+      UUID orderId = UUID.fromString(created.path("id").asString());
+      String path = "/api/v1/tracking/" + created.path("publicCode").asString();
+      UUID courier = courier(false, -46.6571456, -23.5609488);
+      OrderLifecycleService workflow = first.getBean(OrderLifecycleService.class);
+      workflow.assign(orderId, 0, courier, "test:sensitive-actor");
+      // Uma posição recente anterior à atribuição ainda não comprova a localização desta entrega.
+      JsonNode beforePosition = JSON.readTree(anonymous.get(secondPort, path).body());
+      assertThat(beforePosition.path("courierPosition").isNull()).isTrue();
+      assertThat(beforePosition.path("route").isNull()).isTrue();
+      jdbc.sql("UPDATE couriers SET location_updated_at=clock_timestamp() WHERE id=:id")
+          .param("id", courier)
+          .update();
+      JsonNode assigned = JSON.readTree(anonymous.get(secondPort, path).body());
+      assertThat(assigned.path("courierPosition").path("latitude").asDouble())
+          .isEqualTo(-23.5609488);
+      assertThat(assigned.path("courierPositionUpdatedAt").isNull()).isFalse();
+      assertThat(assigned.path("route").path("destination").asString()).isEqualTo("PICKUP");
+      assertThat(assigned.path("route").path("geometry").size()).isGreaterThan(1);
+      assertThat(assigned.path("etaSeconds").isNull()).isFalse();
+      assertThat(assigned.path("etaSeconds").asLong()).isPositive();
+      assertThat(assigned.toString())
+          .doesNotContain(
+              courier.toString(),
+              orderId.toString(),
+              "sensitive-actor",
+              "courierId",
+              "actor",
+              "payload");
+      jdbc.sql(
+              "UPDATE couriers SET location_updated_at=clock_timestamp()-interval '31 seconds' WHERE id=:id")
+          .param("id", courier)
+          .update();
+      JsonNode stale = JSON.readTree(anonymous.get(secondPort, path).body());
+      assertThat(stale.path("courierPosition").isNull()).isTrue();
+      assertThat(stale.path("courierPositionUpdatedAt").isNull()).isTrue();
+      assertThat(stale.path("route").isNull()).isTrue();
+      assertThat(stale.path("etaSeconds").isNull()).isTrue();
+      workflow.arriveAtStore(orderId, 1, "test:arrival");
+      workflow.pickUp(orderId, 2, "test:pickup");
+      jdbc.sql("UPDATE couriers SET location_updated_at=clock_timestamp() WHERE id=:id")
+          .param("id", courier)
+          .update();
+      JsonNode pickedUp = JSON.readTree(anonymous.get(secondPort, path).body());
+      assertThat(pickedUp.path("route").path("destination").asString()).isEqualTo("DROPOFF");
+      assertThat(pickedUp.path("etaSeconds").isNull()).isFalse();
+      assertThat(pickedUp.path("timeline")).hasSize(4);
+      workflow.deliver(orderId, 3, "test:delivery");
+      JsonNode delivered = JSON.readTree(anonymous.get(secondPort, path).body());
+      assertThat(delivered.path("status").asString()).isEqualTo("DELIVERED");
+      assertThat(delivered.path("timeline")).hasSize(5);
+      assertThat(delivered.path("courierPosition").isNull()).isTrue();
+      assertThat(delivered.path("courierPositionUpdatedAt").isNull()).isTrue();
+      assertThat(delivered.path("route").isNull()).isTrue();
+      assertThat(delivered.path("etaSeconds").isNull()).isTrue();
+    }
+  }
+
+  @Test
+  void rejectsExpiredPrivateCapabilitiesEvenAfterTheirRouteWasCached() throws Exception {
+    try (Browser owner = new Browser();
+        Browser anonymous = new Browser()) {
+      owner.login("STORE");
+      JsonNode created = owner.create(secondPort);
+      String path = "/api/v1/tracking/" + created.path("publicCode").asString();
+      assertThat(anonymous.get(secondPort, path).statusCode()).isEqualTo(200);
+      jdbc.sql(
+              "UPDATE demo_contexts SET expires_at=created_at WHERE id=(SELECT visitor_context_id FROM orders WHERE id=:order)")
+          .param("order", UUID.fromString(created.path("id").asString()))
+          .update();
+      HttpResponse<String> response = anonymous.get(secondPort, path);
+      assertThat(response.statusCode()).isEqualTo(404);
+      assertThat(response.body())
+          .contains("TRACKING_NOT_FOUND")
+          .doesNotContain("pickup", "dropoff", "timeline");
     }
   }
 

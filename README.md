@@ -23,6 +23,12 @@ A página inicial mostra uma prévia ao vivo de São Paulo com entregadores em m
 **Explorar mapa** habilita mover e ajustar o zoom. O [guia de mapa e interface](docs/mapa-e-interface.md)
 descreve a base real, a conexão, os controles e a linha do tempo dos pedidos.
 
+A [área da loja](https://bora.alexandregaia.me/loja) permite escolher o destino pelo mapa e
+criar um pedido. **Ver pedidos** abre a consulta, com filtros por estado e busca pelo código
+do pedido. A lista começa em **Meus pedidos**; o cenário simulado fica disponível por escolha.
+Novidades são anunciadas sem reorganizar a lista durante a leitura. O detalhe acompanha as
+mudanças ao vivo e oferece um link público de rastreio, separado do código de confirmação.
+
 ## Executar localmente
 
 Pré-requisitos: Git e Docker com Compose. No Windows, abra o Docker Desktop com o mecanismo

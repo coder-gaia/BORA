@@ -22,9 +22,41 @@ Frames do mapa são limitados a um por segundo e contêm
 o cliente pode derivar a direção entre posições consecutivas. As consultas HTTP equivalentes são
 `GET /api/v1/map/snapshot` e `GET /api/v1/ops/snapshot`, com os quatro limites como parâmetros.
 
-O rastreio exige o código aleatório do pedido e não inclui código de confirmação, histórico
-privado ou identidade do visitante. A consulta HTTP equivalente é `GET /api/v1/tracking/{code}`.
-Esse contrato inicial informa progresso e posição; ainda não estima o tempo restante da entrega.
+O rastreio exige o código aleatório de 192 bits do pedido. Quem possui o link pode consultar
+esse progresso limitado sem entrar na demonstração, por HTTP em `GET /api/v1/tracking/{code}`
+ou por STOMP no destino correspondente. Não inclui código de confirmação, UUID do pedido ou do
+entregador, identidade do visitante, atores, payloads privados nem identificadores globais de
+eventos. A linha do tempo pública contém somente o tipo, os estados, o horário e a versão dos
+marcos conhecidos da entrega. O código não é repetido no snapshot público.
+
+Uma posição só é mostrada nas etapas atribuída, na loja e em entrega, quando recebida nos
+últimos 30 segundos e após a atribuição atual. Posição antiga, pedido concluído ou cancelado
+não expõe a localização do entregador. Um contexto privado expirado também torna o link
+indisponível, mesmo que a geometria da rota esteja em cache.
+
+O snapshot inclui uma rota e uma estimativa até o próximo marco quando há posição recente:
+coleta para `ASSIGNED` e destino para `PICKED_UP`. `etaSeconds` usa o tempo simulado, não o prazo
+de SLA, e corresponde ao instante `route.calculatedAt`. Enquanto busca entregador ou aguarda
+coleta na loja, pode apresentar a rota planejada entre loja e destino, sem ETA. Ao encerrar,
+ficar sem posição recente ou perder o grafo de roteamento, rota dinâmica e ETA ficam ausentes;
+estado e linha do tempo permanecem disponíveis.
+
+Para evitar GraphHopper em cada atualização WebSocket, cada instância mantém no máximo 256
+geometrias em LRU, recalculadas após 10 segundos por pedido e geração. Trocar versão, etapa ou
+entregador invalida a geração imediatamente. Falhas do grafo usam o mesmo intervalo de nova
+tentativa. Um orçamento adicional permite no máximo 16 cálculos em cada janela deslizante de
+um segundo por instância, inclusive quando existem mais links válidos que entradas no cache.
+Quando ocupado, estado e linha do tempo permanecem disponíveis com rota e ETA ausentes; a
+próxima janela pode tentar novamente, sem guardar uma falha de dez segundos por saturação.
+Esse orçamento interno não altera os limites HTTP existentes. O cálculo ocorre fora da
+transação de leitura; o cache não guarda autorização ou
+snapshots privados, e cada consulta revalida o recurso no banco. A posição continua atualizada
+independentemente desse intervalo da rota; a geometria e a ETA podem ter até 10 segundos de idade.
+
+`serverTime` do rastreio é o `statement_timestamp()` do PostgreSQL capturado junto ao estado,
+antes do cálculo de rota. As duas APIs usam assim a mesma fonte de relógio para ordenar leituras;
+uma resposta HTTP antiga que terminar depois de um frame novo mantém o instante da sua leitura.
+O cliente também compara versão e horário da posição para recusar dados atrasados.
 
 Cada assinatura confere o recurso solicitado. A sessão, o papel e o acesso continuam sendo
 validados durante a conexão; sair ou trocar de identidade encerra o acesso anterior. O cliente

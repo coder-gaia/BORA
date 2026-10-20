@@ -12,7 +12,12 @@ const content = (
 
 const root = document.getElementById('root')!;
 const mount = () => {
-  if (root.hasChildNodes()) hydrateRoot(root, content);
+  if (
+    root.hasChildNodes() &&
+    !window.location.pathname.startsWith('/rastreio/') &&
+    window.location.pathname !== '/loja'
+  )
+    hydrateRoot(root, content);
   else createRoot(root).render(content);
 };
 // Preserve the first paint of the public HTML before attaching interactive views.

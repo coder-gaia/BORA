@@ -270,7 +270,15 @@ class RealtimeSessions {
       return json.writeValueAsString(inbox.offer());
     }
     if (snapshot instanceof TrackingSnapshot tracking) {
-      return tracking.status() + ":" + tracking.version() + ":" + tracking.courierPosition();
+      return tracking.status()
+          + ":"
+          + tracking.version()
+          + ":"
+          + tracking.courierPosition()
+          + ":"
+          + tracking.courierPositionUpdatedAt()
+          + ":"
+          + (tracking.route() == null ? null : tracking.route().calculatedAt());
     }
     if (snapshot instanceof MapFrame frame) {
       return json.writeValueAsString(frame.points());
