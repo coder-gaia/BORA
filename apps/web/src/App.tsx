@@ -10,11 +10,27 @@ const DemoPanel = lazy(() =>
 const StorePage = lazy(() =>
   import('@/components/workspace-page').then((module) => ({ default: module.StorePage })),
 );
+const CourierPage = lazy(() =>
+  import('@/components/workspace-page').then((module) => ({ default: module.CourierPage })),
+);
 const PublicTrackingPage = lazy(() =>
   import('@/components/public-tracking').then((module) => ({ default: module.PublicTrackingPage })),
 );
 
 export function App() {
+  if (typeof window !== 'undefined' && window.location.pathname === '/entregador') {
+    return (
+      <Suspense
+        fallback={
+          <main className="tracking-route-loading" role="status">
+            Preparando a área do entregador...
+          </main>
+        }
+      >
+        <CourierPage />
+      </Suspense>
+    );
+  }
   if (typeof window !== 'undefined' && window.location.pathname === '/loja') {
     return (
       <Suspense

@@ -13,6 +13,8 @@ export type CourierRouteView = components['schemas']['CourierRouteView'];
 export type CourierOfferInbox = components['schemas']['CourierOfferInbox'];
 export type CourierOffer = components['schemas']['CourierOffer'];
 export type TrackingSnapshot = components['schemas']['TrackingSnapshot'];
+export type TrainingOrderReceipt = components['schemas']['TrainingOrderReceipt'];
+export type TrainingOrderState = components['schemas']['TrainingOrderState'];
 type SimulationConfig = components['schemas']['SimulationConfig'];
 type CourierView = components['schemas']['CourierView'];
 type GeoPoint = components['schemas']['GeoPoint'];
@@ -90,10 +92,16 @@ export async function getCsrf(signal?: AbortSignal) {
   return request<CsrfView>('/api/v1/auth/csrf', { signal });
 }
 
-async function post<T>(path: string, body?: unknown, headers?: Record<string, string>) {
-  const csrf = await getCsrf();
+async function post<T>(
+  path: string,
+  body?: unknown,
+  headers?: Record<string, string>,
+  signal?: AbortSignal,
+) {
+  const csrf = await getCsrf(signal);
   return request<T>(path, {
     method: 'POST',
+    signal,
     headers: { 'Content-Type': 'application/json', [csrf.headerName]: csrf.token, ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -157,16 +165,31 @@ export const api = {
       online,
       position,
     } satisfies AvailabilityRequest),
-  async sendPosition(position: GeoPoint) {
+  trainingOrder: (key: string, signal?: AbortSignal) =>
+    post<TrainingOrderReceipt>(
+      '/api/v1/courier/training-order',
+      undefined,
+      { 'Idempotency-Key': key },
+      signal,
+    ),
+  cancelTrainingOrder: (id: string, expectedVersion: number, signal?: AbortSignal) =>
+    post<TrainingOrderState>(
+      `/api/v1/courier/training-order/${encodeURIComponent(id)}/cancel`,
+      { expectedVersion },
+      undefined,
+      signal,
+    ),
+  async sendPosition(position: GeoPoint, signal?: AbortSignal) {
     // A posição manual é coletada agora; o relógio local pode divergir do servidor.
-    const clock = await api.courierOffer();
+    const clock = await api.courierOffer(signal);
     const observedAt = performance.now();
-    const csrf = await getCsrf();
+    const csrf = await getCsrf(signal);
     const recordedAt = new Date(
       Date.parse(clock.serverTime) + performance.now() - observedAt,
     ).toISOString();
     return request<PositionReceipt>('/api/v1/courier/positions', {
       method: 'POST',
+      signal,
       headers: { 'Content-Type': 'application/json', [csrf.headerName]: csrf.token },
       body: JSON.stringify({
         positions: [{ recordedAt, position }],

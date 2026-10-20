@@ -15,7 +15,8 @@ const mount = () => {
   if (
     root.hasChildNodes() &&
     !window.location.pathname.startsWith('/rastreio/') &&
-    window.location.pathname !== '/loja'
+    window.location.pathname !== '/loja' &&
+    window.location.pathname !== '/entregador'
   )
     hydrateRoot(root, content);
   else createRoot(root).render(content);

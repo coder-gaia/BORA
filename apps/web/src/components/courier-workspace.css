@@ -1,0 +1,120 @@
+.courier-training {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--background);
+}
+.courier-training > div:first-child {
+  flex: 1 1 280px;
+}
+.courier-training .eyebrow {
+  margin: 0 0 8px;
+}
+.training-receipt {
+  flex-basis: 100%;
+  min-width: 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.training-receipt > p {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.training-code {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin-block: 20px;
+}
+.training-code > span {
+  flex-basis: 100%;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.courier-driving {
+  margin-block: 24px;
+}
+.drive-actions {
+  margin-top: 20px;
+}
+.offer-ring-summary {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-block: 24px;
+}
+.offer-ring {
+  position: relative;
+  width: 92px;
+  height: 92px;
+  flex-shrink: 0;
+}
+.offer-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  fill: none;
+  stroke-width: 5;
+}
+.offer-ring-track {
+  stroke: var(--border);
+}
+.offer-ring-progress {
+  stroke: #55430a;
+  stroke-linecap: round;
+}
+.offer-ring > span {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--foreground);
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.offer-ring small {
+  margin-top: 6px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+@media (width <= 480px) {
+  .courier-training {
+    padding: 16px;
+  }
+  .offer-ring-summary {
+    gap: 16px;
+  }
+  .offer-ring {
+    width: 76px;
+    height: 76px;
+  }
+}
+
+.courier-workspace > section {
+  min-width: 0;
+}
+.courier-workspace button {
+  max-width: 100%;
+  white-space: normal;
+}
+.courier-workspace .role-options {
+  gap: 10px;
+}
+.courier-workspace .order-fields {
+  row-gap: 20px;
+}
+.workspace-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}

@@ -29,6 +29,11 @@ do pedido. A lista começa em **Meus pedidos**; o cenário simulado fica dispon�
 Novidades são anunciadas sem reorganizar a lista durante a leitura. O detalhe acompanha as
 mudanças ao vivo e oferece um link público de rastreio, separado do código de confirmação.
 
+A [área do entregador](https://bora.alexandregaia.me/entregador) permite receber ofertas e
+acompanhar cada etapa. Um pedido de treino permite experimentar o percurso sozinho: aceite
+a oferta e inicie a direção simulada, com pausa e retomada. A coleta e a confirmação da
+entrega continuam manuais; o código exibido pertence somente àquele treino.
+
 ## Executar localmente
 
 Pré-requisitos: Git e Docker com Compose. No Windows, abra o Docker Desktop com o mecanismo

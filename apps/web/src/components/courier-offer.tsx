@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { OfferRing } from '@/components/offer-ring';
+import { useOfferWindow } from '@/hooks/use-offer-window';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { api, type CourierOffer as Offer } from '@/lib/api';
@@ -10,30 +12,26 @@ function OfferDetails({
   receivedAt,
   busy,
   onDecision,
+  onExpired,
 }: {
   offer: Offer;
   serverTime: string;
   receivedAt: number;
   busy: boolean;
   onDecision: (action: 'accept' | 'reject') => void;
+  onExpired: () => void;
 }) {
-  const [now, setNow] = useState(() => performance.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(performance.now()), 500);
-    return () => window.clearInterval(timer);
-  }, []);
-  const seconds = Math.max(
-    0,
-    Math.ceil(
-      (Date.parse(offer.expiresAt) - Date.parse(serverTime) - Math.max(0, now - receivedAt)) /
-        1_000,
-    ),
+  const offerClock = useOfferWindow(
+    offer.createdAt,
+    offer.expiresAt,
+    serverTime,
+    receivedAt,
+    onExpired,
   );
+  const seconds = offerClock.seconds;
   return (
     <>
-      <p className="offer-countdown">
-        {seconds > 0 ? `Responda em até ${seconds} s.` : 'Prazo encerrado. Consultando a oferta...'}
-      </p>
+      <OfferRing seconds={seconds} fraction={offerClock.fraction} />
       <dl className="order-fields">
         <div>
           <dt>Loja</dt>
@@ -61,13 +59,20 @@ function OfferDetails({
         </div>
       </dl>
       <div className="role-options">
-        <Button disabled={busy || seconds === 0} onClick={() => onDecision('accept')}>
+        <Button
+          disabled={busy || seconds === 0}
+          onClick={() => {
+            if (offerClock.canDecide()) onDecision('accept');
+          }}
+        >
           Aceitar oferta
         </Button>
         <Button
           variant="outline"
           disabled={busy || seconds === 0}
-          onClick={() => onDecision('reject')}
+          onClick={() => {
+            if (offerClock.canDecide()) onDecision('reject');
+          }}
         >
           Recusar oferta
         </Button>
@@ -139,6 +144,9 @@ export function CourierOffer({
           serverTime={inbox.data.serverTime}
           receivedAt={inbox.data.receivedAt}
           busy={busy || decision.isPending}
+          onExpired={() => {
+            void queries.invalidateQueries({ queryKey: ['courier-offer', userId] });
+          }}
           onDecision={(action) => decision.mutate({ id: offer.id, action })}
         />
       )}

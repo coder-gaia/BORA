@@ -199,6 +199,19 @@ ou de contexto expirado mostra indisponibilidade e encerra o acompanhamento daqu
 Em uma falha temporária de rede, o último estado válido pode permanecer visível, identificado
 como uma atualização anterior.
 
+## Entregador
+
+A rota `/entregador` reúne disponibilidade, oferta, percurso e ações da entrega. O mapa da
+etapa carrega depois da atribuição; a página inicial mantém sua prévia e a escolha
+**Explorar mapa**. A contagem da oferta tem representação visual e texto em segundos,
+sem anunciar uma mudança a cada quadro para leitores de tela.
+
+O treino permite percorrer o fluxo sem depender de outra pessoa alternando para a loja.
+A direção é uma ação explícita, pode ser pausada e exige uma nova intenção para retomar.
+Os marcos de chegada, coleta e entrega refletem o estado confirmado pelo backend.
+Consulte o [guia de entregadores](entregadores-e-posicoes.md#área-do-entregador-e-treino)
+para os limites, a recuperação da intenção e o código privado de confirmação.
+
 ## Publicação e política de conteúdo
 
 A política de produção permite `https://tiles.openfreemap.org` em `connect-src` e `img-src` para

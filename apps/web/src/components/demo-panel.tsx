@@ -11,6 +11,8 @@ import { api, type DemoRole } from '@/lib/api';
 import { CourierWorkspace } from '@/components/courier-workspace';
 import { ConnectionStatus, RealtimeProvider } from '@/components/realtime-provider';
 import { OrderWorkspace } from '@/components/order-workspace';
+import { forgetTrainingIntents } from '@/lib/training-intent';
+import { useEffect } from 'react';
 
 const roles = [
   { value: 'STORE', label: 'Sou loja', icon: Store },
@@ -59,6 +61,9 @@ function DemoWorkspace({ requestedRole }: { requestedRole?: DemoRole }) {
     },
   });
   const user = session.data?.user;
+  useEffect(() => {
+    if (session.isSuccess && !user) forgetTrainingIntents();
+  }, [user, session.isSuccess]);
 
   return (
     <section
@@ -70,7 +75,11 @@ function DemoWorkspace({ requestedRole }: { requestedRole?: DemoRole }) {
         <div>
           <p className="eyebrow">Demonstração</p>
           <h2 id="demo-title">
-            {requestedRole === 'STORE' ? 'Sua loja, suas entregas' : 'Experimente um pedido'}
+            {requestedRole === 'STORE'
+              ? 'Sua loja, suas entregas'
+              : requestedRole === 'COURIER'
+                ? 'Sua próxima entrega'
+                : 'Experimente um pedido'}
           </h2>
         </div>
         {user && (
@@ -86,7 +95,9 @@ function DemoWorkspace({ requestedRole }: { requestedRole?: DemoRole }) {
       <p className="demo-description">
         {requestedRole === 'STORE'
           ? 'Entre como loja para criar e acompanhar seus pedidos neste contexto.'
-          : 'Escolha como participar. Você pode trocar de papel e continuar no mesmo contexto.'}
+          : requestedRole === 'COURIER'
+            ? 'Entre como entregador para receber ofertas e percorrer cada etapa.'
+            : 'Escolha como participar. Você pode trocar de papel e continuar no mesmo contexto.'}
       </p>
       <div className="role-options" role="group" aria-label="Escolher papel">
         {roles
@@ -105,9 +116,14 @@ function DemoWorkspace({ requestedRole }: { requestedRole?: DemoRole }) {
           ))}
       </div>
       {!requestedRole && (
-        <a className="store-area-link" href="/loja">
-          Abrir área da loja <span aria-hidden="true">↗</span>
-        </a>
+        <nav className="workspace-links" aria-label="Áreas de demonstração">
+          <a className="store-area-link" href="/loja">
+            Abrir área da loja <span aria-hidden="true">↗</span>
+          </a>
+          <a className="store-area-link" href="/entregador">
+            Abrir área do entregador <span aria-hidden="true">↗</span>
+          </a>
+        </nav>
       )}
       <ErrorMessage error={authentication.error ?? session.error} />
       {session.isPending && <p role="status">Consultando sua sessão...</p>}
@@ -131,13 +147,15 @@ function DemoWorkspace({ requestedRole }: { requestedRole?: DemoRole }) {
       )}
       {user && requestedRole && user.role !== requestedRole && (
         <p className="demo-empty">
-          Seu contexto está preservado. Escolha Sou loja para abrir esta área.
+          Seu contexto está preservado. Escolha o papel desta área para continuar.
         </p>
       )}
       {!user && !session.isPending && !session.error && (
         <p className="demo-empty">
-          Entre como loja para criar seu primeiro pedido. Seus dados ficam restritos ao seu contexto
-          de demonstração.
+          {requestedRole === 'COURIER'
+            ? 'Escolha Sou entregador para receber ofertas e praticar uma entrega.'
+            : 'Entre como loja para criar seu primeiro pedido.'}{' '}
+          Seus dados ficam restritos ao seu contexto de demonstração.
         </p>
       )}
     </section>

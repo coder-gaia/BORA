@@ -91,6 +91,62 @@ decorrido com relógio monotônico. Assim, adiantar ou atrasar o relógio do nav
 uma posição coletada agora em uma posição antiga ou futura. O recebimento e a persistência
 continuam sendo verificados separadamente.
 
+## Área do entregador e treino
+
+Abra `/entregador` e escolha **Sou entregador**. Abrir o endereço não cria uma conta nem
+troca o papel automaticamente. O contexto é o mesmo usado na loja e na operação.
+
+O pedido de treino é uma entrega privada criada para o próprio entregador disponível.
+`POST /api/v1/courier/training-order` exige sessão, CSRF e `Idempotency-Key`, sem corpo.
+A escolha de uma loja alcançável, a criação do pedido e a reserva de uma oferta de trinta
+segundos pertencem à mesma transação. As validações de área, rota, limite de pedidos ativos
+e versão continuam valendo.
+
+O recibo contém `orderId`, `offerId`, `expiresAt`, `confirmationCode`, `status`, `version` e
+`serverTime`. Repetir a mesma intenção devolve o pedido e o prazo originais, inclusive depois
+de aceitar ou expirar a oferta. O código é rederivado somente para o criador autorizado;
+não entra no JSON persistido de idempotência, na oferta, no trabalho ou no rastreio público.
+
+A interface pode guardar a chave da intenção na `sessionStorage`, separada por usuário,
+para recuperar o treino após recarregar a página. O código permanece em memória. Sair ou
+perder o contexto encerra esse acesso; uma falha temporária de rede preserva a intenção
+para recuperação explícita, evitando criar outro pedido por acidente.
+
+**Encerrar treino** usa `POST /api/v1/courier/training-order/{id}/cancel`, com
+`expectedVersion`, somente para o criador e antes da coleta. Também permite encerrar um
+treino cuja oferta expirou ou foi recusada, mesmo sem trabalho atribuído. Depois da coleta,
+a entrega deve seguir o fluxo normal. A ação não concede permissão para cancelar outros
+pedidos privados ou pedidos comuns pelo endpoint de treino.
+
+## Direção simulada
+
+Depois de aceitar uma oferta, o entregador pode iniciar explicitamente o percurso até a
+loja. O primeiro clique atualiza a posição de origem e aguarda sua persistência antes de
+consultar a rota. O movimento segue os segmentos da rota calculada, usando a duração já acelerada da
+simulação. Não há uma segunda multiplicação de `SIM_SPEED`. A interface envia uma posição
+a cada dois segundos e mantém somente um envio em andamento.
+
+Pausar interrompe novos envios e cancela a espera do cliente. Uma posição já aceita ainda
+pode ser persistida pelo servidor. Retomar exige outro clique e uma rota a partir da
+posição confirmada. Ocultar a aba, perder a conexão, sair, trocar de papel ou mudar de
+pedido ou etapa interrompe a direção; voltar à aba não produz um salto de localização.
+
+Se um envio for interrompido antes da resposta, a interface indica a incerteza. A ação
+**Confirmar posição enviada** reenvia explicitamente aquele ponto e aguarda sua persistência
+antes de liberar outra rota. Esse ponto pertence à intenção original; uma mudança de pedido,
+etapa ou contexto não permite reaproveitá-lo para outro trabalho.
+
+A chegada à loja depende da posição persistida e da transição real para `AT_STORE`.
+**Confirmar coleta** continua manual. Depois dela, outro clique inicia o trajeto ao cliente.
+Chegar ao destino também não conclui a entrega: é preciso informar o código do pedido
+privado e escolher **Confirmar entrega**. Pedidos comuns da loja continuam exigindo o código
+fornecido por ela; o código de treino não serve para outro pedido.
+
+Os comandos manuais de posição ficam indisponíveis durante a direção. Erros ou mudanças de
+versão interrompem o percurso e atualizam o trabalho, sem repetir mutações automaticamente.
+O anel da oferta usa o horário remoto e o tempo monotônico do navegador; o prazo final e a
+validade do aceite continuam sendo decididos no servidor.
+
 ## Verificações
 
 Os testes com PostgreSQL e PostGIS reais verificam autorização, disponibilidade, posições

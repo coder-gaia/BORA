@@ -88,6 +88,8 @@ class OpenApiContractIT {
               "/api/v1/courier/work",
               "/api/v1/courier/route",
               "/api/v1/courier/offer",
+              "/api/v1/courier/training-order",
+              "/api/v1/courier/training-order/{id}/cancel",
               "/api/v1/offers/{id}/accept",
               "/api/v1/offers/{id}/reject",
               "/api/v1/ops/orders/{id}/reassign",
@@ -106,6 +108,104 @@ class OpenApiContractIT {
             .isTrue();
       }
       assertThat(paths.path("/api/v1/orders").path("post").path("responses").has("201")).isTrue();
+      JsonNode training = paths.path("/api/v1/courier/training-order").path("post");
+      JsonNode endTraining = paths.path("/api/v1/courier/training-order/{id}/cancel").path("post");
+      assertThat(training.path("operationId").asString()).isEqualTo("createCourierTrainingOrder");
+      assertThat(endTraining.path("operationId").asString())
+          .isEqualTo("cancelCourierTrainingOrder");
+      assertThat(training.path("responses").has("201")).isTrue();
+      assertThat(endTraining.path("responses").has("200")).isTrue();
+      assertThat(
+              training
+                  .path("responses")
+                  .path("201")
+                  .path("content")
+                  .path("application/json")
+                  .path("schema")
+                  .path("$ref")
+                  .asString())
+          .endsWith("/TrainingOrderReceipt");
+      assertThat(
+              endTraining
+                  .path("responses")
+                  .path("200")
+                  .path("content")
+                  .path("application/json")
+                  .path("schema")
+                  .path("$ref")
+                  .asString())
+          .endsWith("/TrainingOrderState");
+      for (String status : List.of("400", "401", "403", "409", "422", "429", "503")) {
+        assertThat(training.path("responses").has(status))
+            .as("training create %s", status)
+            .isTrue();
+        assertThat(
+                training
+                    .path("responses")
+                    .path(status)
+                    .path("content")
+                    .path("application/problem+json")
+                    .path("schema")
+                    .path("$ref")
+                    .asString())
+            .isEqualTo("#/components/schemas/ApiProblem");
+      }
+      for (String status : List.of("400", "401", "403", "404", "409")) {
+        assertThat(endTraining.path("responses").has(status))
+            .as("training cancel %s", status)
+            .isTrue();
+        assertThat(
+                endTraining
+                    .path("responses")
+                    .path(status)
+                    .path("content")
+                    .path("application/problem+json")
+                    .path("schema")
+                    .path("$ref")
+                    .asString())
+            .isEqualTo("#/components/schemas/ApiProblem");
+      }
+      assertThat(training.path("responses").path("429").path("headers").has("Retry-After"))
+          .isTrue();
+      for (JsonNode operation : List.of(training, endTraining)) {
+        assertThat(operation.path("security").size()).isEqualTo(1);
+        assertThat(operation.path("security").get(0).has("sessionCookie")).isTrue();
+        assertThat(operation.path("security").get(0).has("csrfToken")).isTrue();
+      }
+      boolean trainingKeyRequired = false;
+      for (JsonNode parameter : training.path("parameters")) {
+        if (parameter.path("name").asString().equals("Idempotency-Key")) {
+          trainingKeyRequired =
+              parameter.path("in").asString().equals("header")
+                  && parameter.path("required").asBoolean();
+        }
+      }
+      assertThat(trainingKeyRequired).as("training requires Idempotency-Key header").isTrue();
+      JsonNode receiptProperties =
+          contract
+              .path("components")
+              .path("schemas")
+              .path("TrainingOrderReceipt")
+              .path("properties");
+      for (String property :
+          List.of(
+              "orderId",
+              "offerId",
+              "expiresAt",
+              "confirmationCode",
+              "status",
+              "version",
+              "serverTime")) {
+        assertThat(receiptProperties.has(property)).as(property).isTrue();
+      }
+      assertThat(
+              contract
+                  .path("components")
+                  .path("schemas")
+                  .path("TrainingOrderState")
+                  .path("properties")
+                  .has("confirmationCode"))
+          .isFalse();
       assertThat(paths.path("/api/v1/courier/positions").path("post").path("responses").has("202"))
           .isTrue();
       assertThat(paths.path("/api/v1/auth/csrf").path("get").path("parameters").isEmpty()).isTrue();

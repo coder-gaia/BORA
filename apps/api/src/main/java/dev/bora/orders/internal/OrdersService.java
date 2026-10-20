@@ -13,6 +13,9 @@ import dev.bora.orders.OrderStatus;
 import dev.bora.orders.OrderSummary;
 import dev.bora.orders.OrderVersionConflict;
 import dev.bora.orders.OrderView;
+import dev.bora.orders.TrainingOrderReceipt;
+import dev.bora.orders.TrainingOrderState;
+import dev.bora.orders.TrainingOrders;
 import dev.bora.routing.GeoPoint;
 import dev.bora.routing.RoutingException;
 import dev.bora.routing.RoutingService;
@@ -41,12 +44,15 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 @Service
-class OrdersService implements OrderSnapshots {
+class OrdersService implements OrderSnapshots, TrainingOrders {
+  private static final String TRAINING_OPERATION = "COURIER_TRAINING_ORDER";
   private static final String OPERATION = "CREATE_ORDER";
   private static final SecureRandom RANDOM = new SecureRandom();
   private static final GeometryFactory GEOMETRY = new GeometryFactory(new PrecisionModel(), 4326);
@@ -105,19 +111,13 @@ class OrdersService implements OrderSnapshots {
 
   OrderView create(DemoPrincipal user, String key, CreateOrderRequest request) {
     requireStore(user);
-    if (key == null || !key.matches("[\\x21-\\x7E]{1,128}")) {
-      throw failure(
-          HttpStatus.BAD_REQUEST,
-          "INVALID_IDEMPOTENCY_KEY",
-          "Informe uma chave de idempotência de 1 a 128 caracteres ASCII sem espaços.");
-    }
+    String keyHash = idempotencyKeyHash(key);
     GeoPoint dropoff;
     try {
       dropoff = new GeoPoint(request.dropoff().latitude(), request.dropoff().longitude());
     } catch (IllegalArgumentException | NullPointerException exception) {
       throw failure(HttpStatus.BAD_REQUEST, "INVALID_DROPOFF", "Informe um destino válido.");
     }
-    String keyHash = sha256(key);
     String requestHash =
         sha256(
             user.storeId()
@@ -143,6 +143,193 @@ class OrdersService implements OrderSnapshots {
           "SIMULATOR_STORE_REQUIRED",
           "A identidade interna exige uma loja simulada.");
     }
+    validateDropoff(store, dropoff);
+    return transaction.execute(
+        status -> {
+          lockContext(user.contextId());
+          OrderView repeated = replay(user, keyHash, requestHash);
+          if (repeated != null) {
+            return repeated;
+          }
+          UUID id = persistNewOrder(user, store, dropoff, publicSimulation, clock.instant());
+          OrderView created = detail(user, id);
+          ObjectNode snapshot = mapper.valueToTree(created);
+          snapshot.remove("confirmationCode");
+          rememberRequest(user, OPERATION, keyHash, requestHash, id, snapshot);
+          return created;
+        });
+  }
+
+  @Override
+  public TrainingOrderReceipt replayTraining(DemoPrincipal user, String key) {
+    requireTrainingCourier(user);
+    String keyHash = idempotencyKeyHash(key);
+    var existing =
+        jdbc.sql(
+                """
+            SELECT r.request_hash,r.response_json::text response,o.owner_user_id,o.status,o.version
+            FROM order_idempotency r JOIN orders o ON o.id=r.order_id
+            JOIN demo_contexts dc ON dc.id=r.context_id
+            WHERE r.context_id=:context AND r.operation=:operation AND r.key_hash=:key
+              AND o.visitor_context_id=:context
+              AND dc.expires_at>dc.created_at AND dc.expires_at>clock_timestamp()
+            """)
+            .param("context", user.contextId())
+            .param("operation", TRAINING_OPERATION)
+            .param("key", keyHash)
+            .query(
+                (row, index) ->
+                    new SavedTraining(
+                        row.getString("request_hash"),
+                        row.getString("response"),
+                        row.getObject("owner_user_id", UUID.class),
+                        OrderStatus.valueOf(row.getString("status")),
+                        row.getLong("version")))
+            .optional();
+    if (existing.isEmpty()) return null;
+    var saved = existing.get();
+    if (!user.userId().equals(saved.owner())
+        || !trainingRequestHash(user).equals(saved.requestHash())) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "IDEMPOTENCY_KEY_REUSED",
+          "Esta chave de idempotência já foi usada em outra solicitação.");
+    }
+    var value = mapper.readTree(saved.response());
+    UUID orderId = UUID.fromString(value.path("orderId").asString());
+    return new TrainingOrderReceipt(
+        orderId,
+        UUID.fromString(value.path("offerId").asString()),
+        Instant.parse(value.path("expiresAt").asString()),
+        codes.code(orderId),
+        saved.status(),
+        saved.version(),
+        clock.instant());
+  }
+
+  @Override
+  @Transactional(propagation = Propagation.MANDATORY)
+  public TrainingOrderReceipt lockAndReplayTraining(DemoPrincipal user, String key) {
+    requireTrainingCourier(user);
+    idempotencyKeyHash(key);
+    lockLiveTrainingContext(user);
+    return replayTraining(user, key);
+  }
+
+  @Override
+  @Transactional(propagation = Propagation.MANDATORY)
+  public TrainingOrderReceipt createTraining(
+      DemoPrincipal user, String key, StoreView store, GeoPoint dropoff, UUID offerId) {
+    requireTrainingCourier(user);
+    String keyHash = idempotencyKeyHash(key);
+    validateDropoff(store, dropoff);
+    lockLiveTrainingContext(user);
+    Instant now = clock.instant();
+    UUID id = persistNewOrder(user, store, dropoff, false, now);
+    Instant expiresAt = now.plusSeconds(30);
+    ObjectNode saved = mapper.createObjectNode();
+    saved.put("orderId", id.toString());
+    saved.put("offerId", offerId.toString());
+    saved.put("expiresAt", expiresAt.toString());
+    rememberRequest(user, TRAINING_OPERATION, keyHash, trainingRequestHash(user), id, saved);
+    return new TrainingOrderReceipt(
+        id, offerId, expiresAt, codes.code(id), OrderStatus.SEARCHING, 0, now);
+  }
+
+  @Override
+  public TrainingOrderState cancelTraining(DemoPrincipal user, UUID orderId, long expectedVersion) {
+    requireTrainingCourier(user);
+    if (expectedVersion < 0) {
+      throw failure(
+          HttpStatus.BAD_REQUEST, "INVALID_ORDER_VERSION", "Informe a versão atual do treino.");
+    }
+    try {
+      return transaction.execute(
+          ignored -> {
+            lockLiveTrainingContext(user);
+            var current =
+                jdbc.sql(
+                        """
+            SELECT o.version FROM orders o JOIN order_idempotency r ON r.order_id=o.id
+            WHERE o.id=:id AND o.visitor_context_id=:context AND o.owner_user_id=:owner
+              AND r.context_id=:context AND r.operation=:operation
+            FOR UPDATE OF o
+            """)
+                    .param("id", orderId)
+                    .param("context", user.contextId())
+                    .param("owner", user.userId())
+                    .param("operation", TRAINING_OPERATION)
+                    .query(Long.class)
+                    .optional();
+            if (current.isEmpty()) {
+              throw failure(
+                  HttpStatus.NOT_FOUND,
+                  "TRAINING_ORDER_NOT_FOUND",
+                  "Pedido de treino não encontrado.");
+            }
+            if (current.get() != expectedVersion) throw new OrderVersionConflict(orderId);
+            // Reutiliza a transição normal. Ela libera a oferta e o courier pelo listener
+            // transacional existente, e continua recusando cancelamento após a coleta.
+            var change =
+                lifecycle.cancelByOperations(orderId, expectedVersion, "user:" + user.userId());
+            return new TrainingOrderState(
+                change.orderId(), change.status(), change.version(), clock.instant());
+          });
+    } catch (OrderVersionConflict changed) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "ORDER_VERSION_CONFLICT",
+          "O treino foi atualizado. Consulte o estado atual e tente novamente.");
+    } catch (InvalidOrderTransition unavailable) {
+      throw failure(
+          HttpStatus.CONFLICT,
+          "INVALID_ORDER_TRANSITION",
+          "Não é possível encerrar o treino nesta etapa. Conclua a entrega após a coleta.");
+    }
+  }
+
+  private void lockLiveTrainingContext(DemoPrincipal user) {
+    lockContext(user.contextId());
+    // The context can expire while this request waits for another owner transaction.
+    if (!jdbc.sql(
+            """
+        SELECT EXISTS(SELECT 1 FROM demo_contexts WHERE id=:context
+          AND expires_at>created_at AND expires_at>clock_timestamp())
+        """)
+        .param("context", user.contextId())
+        .query(Boolean.class)
+        .single()) {
+      throw failure(
+          HttpStatus.UNAUTHORIZED,
+          "DEMO_EXPIRED",
+          "Sua demonstração expirou. Entre novamente para continuar.");
+    }
+  }
+
+  private static String trainingRequestHash(DemoPrincipal user) {
+    return sha256("courier-training:v1:" + user.userId() + ":" + user.courierId());
+  }
+
+  private static void requireTrainingCourier(DemoPrincipal user) {
+    if (user.role() != DemoRole.COURIER || user.courierId() == null || !user.visitor()) {
+      throw failure(
+          HttpStatus.FORBIDDEN,
+          "TRAINING_COURIER_REQUIRED",
+          "Entre como entregador visitante para criar um pedido de treino.");
+    }
+  }
+
+  private static String idempotencyKeyHash(String key) {
+    if (key == null || !key.matches("[\\x21-\\x7E]{1,128}")) {
+      throw failure(
+          HttpStatus.BAD_REQUEST,
+          "INVALID_IDEMPOTENCY_KEY",
+          "Informe uma chave de idempotência de 1 a 128 caracteres ASCII sem espaços.");
+    }
+    return sha256(key);
+  }
+
+  private void validateDropoff(StoreView store, GeoPoint dropoff) {
     if (!stores.covers(store.serviceAreaId(), dropoff)) {
       throw failure(
           HttpStatus.UNPROCESSABLE_ENTITY,
@@ -169,69 +356,74 @@ class OrdersService implements OrderSnapshots {
           "DROPOFF_UNREACHABLE",
           "Não encontramos uma rota de moto para esse destino. Escolha um ponto próximo a uma via.");
     }
-    return transaction.execute(
-        status -> {
-          lockContext(user.contextId());
-          OrderView repeated = replay(user, keyHash, requestHash);
-          if (repeated != null) {
-            return repeated;
-          }
-          long active =
-              jdbc.sql(
-                      """
-              SELECT count(*) FROM orders WHERE visitor_context_id = :context
-                AND status IN ('SEARCHING', 'ASSIGNED', 'AT_STORE', 'PICKED_UP')
-              """)
-                  .param("context", user.contextId())
-                  .query(Long.class)
-                  .single();
-          if (user.visitor() && active >= 5) {
-            throw failure(
-                HttpStatus.TOO_MANY_REQUESTS,
-                "ACTIVE_ORDER_LIMIT",
-                "Você já tem cinco pedidos ativos. Conclua ou cancele um deles antes de criar outro.");
-          }
-          UUID id = UUID.randomUUID();
-          Instant now = clock.instant();
-          entityManager.persist(
-              new OrderEntity(
-                  id,
-                  publicCode(),
-                  store.id(),
-                  GEOMETRY.createPoint(new Coordinate(dropoff.longitude(), dropoff.latitude())),
-                  publicSimulation ? null : codes.hash(id),
-                  now,
-                  now.plusSeconds(1_800),
-                  publicSimulation ? null : user.contextId(),
-                  publicSimulation ? null : user.userId()));
-          entityManager.flush();
-          entityManager.persist(
-              new OrderEventEntity(
-                  id,
-                  "ORDER_CREATED",
-                  Map.of("to", OrderStatus.SEARCHING.name(), "version", 0),
-                  "user:" + user.userId(),
-                  now,
-                  0));
-          entityManager.flush();
-          OrderView created = detail(user, id);
-          ObjectNode snapshot = mapper.valueToTree(created);
-          snapshot.remove("confirmationCode");
-          jdbc.sql(
-                  """
-              INSERT INTO order_idempotency
-                (context_id, operation, key_hash, request_hash, order_id, response_json)
-              VALUES (:context, :operation, :key, :request, :id, CAST(:response AS jsonb))
-              """)
-              .param("context", user.contextId())
-              .param("operation", OPERATION)
-              .param("key", keyHash)
-              .param("request", requestHash)
-              .param("id", id)
-              .param("response", mapper.writeValueAsString(snapshot))
-              .update();
-          return created;
-        });
+  }
+
+  private UUID persistNewOrder(
+      DemoPrincipal user,
+      StoreView store,
+      GeoPoint dropoff,
+      boolean publicSimulation,
+      Instant now) {
+    long active =
+        jdbc.sql(
+                """
+        SELECT count(*) FROM orders WHERE visitor_context_id = :context
+          AND status IN ('SEARCHING', 'ASSIGNED', 'AT_STORE', 'PICKED_UP')
+        """)
+            .param("context", user.contextId())
+            .query(Long.class)
+            .single();
+    if (user.visitor() && active >= 5) {
+      throw failure(
+          HttpStatus.TOO_MANY_REQUESTS,
+          "ACTIVE_ORDER_LIMIT",
+          "Você já tem cinco pedidos ativos. Conclua ou cancele um deles antes de criar outro.");
+    }
+    UUID id = UUID.randomUUID();
+    entityManager.persist(
+        new OrderEntity(
+            id,
+            publicCode(),
+            store.id(),
+            GEOMETRY.createPoint(new Coordinate(dropoff.longitude(), dropoff.latitude())),
+            publicSimulation ? null : codes.hash(id),
+            now,
+            now.plusSeconds(1_800),
+            publicSimulation ? null : user.contextId(),
+            publicSimulation ? null : user.userId()));
+    entityManager.flush();
+    entityManager.persist(
+        new OrderEventEntity(
+            id,
+            "ORDER_CREATED",
+            Map.of("to", OrderStatus.SEARCHING.name(), "version", 0),
+            "user:" + user.userId(),
+            now,
+            0));
+    entityManager.flush();
+    return id;
+  }
+
+  private void rememberRequest(
+      DemoPrincipal user,
+      String operation,
+      String keyHash,
+      String requestHash,
+      UUID id,
+      ObjectNode snapshot) {
+    jdbc.sql(
+            """
+        INSERT INTO order_idempotency
+          (context_id, operation, key_hash, request_hash, order_id, response_json)
+        VALUES (:context, :operation, :key, :request, :id, CAST(:response AS jsonb))
+        """)
+        .param("context", user.contextId())
+        .param("operation", operation)
+        .param("key", keyHash)
+        .param("request", requestHash)
+        .param("id", id)
+        .param("response", mapper.writeValueAsString(snapshot))
+        .update();
   }
 
   OrderPage list(
@@ -534,6 +726,9 @@ class OrdersService implements OrderSnapshots {
   }
 
   private record SavedResponse(String requestHash, String response) {}
+
+  private record SavedTraining(
+      String requestHash, String response, UUID owner, OrderStatus status, long version) {}
 
   private record OrderRecord(OrderSummary summary, UUID ownerUserId, UUID contextId) {}
 }

@@ -156,6 +156,43 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/courier/training-order': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Criar um pedido privado de treino com oferta para o próprio entregador
+     * @description Repetir a mesma Idempotency-Key preserva o pedido, a oferta e o prazo original. O código de confirmação é devolvido somente ao criador nesta resposta.
+     */
+    post: operations['createCourierTrainingOrder'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/courier/training-order/{id}/cancel': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Encerrar um treino do próprio entregador antes da coleta */
+    post: operations['cancelCourierTrainingOrder'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/courier/work': {
     parameters: {
       query?: never;
@@ -446,6 +483,10 @@ export interface components {
       /** Formato: int64 */
       expectedVersion: number;
     };
+    CancelTrainingOrderRequest: {
+      /** Formato: int64 */
+      expectedVersion: number;
+    };
     CourierOffer: {
       /** Formato: date-time */
       createdAt: string;
@@ -683,6 +724,31 @@ export interface components {
       status: 'ASSIGNED' | 'AT_STORE' | 'CANCELED' | 'DELIVERED' | 'PICKED_UP' | 'SEARCHING';
       storeName: string;
       timeline: components['schemas']['TrackingEvent'][];
+      /** Formato: int64 */
+      version: number;
+    };
+    TrainingOrderReceipt: {
+      confirmationCode: string;
+      /** Formato: date-time */
+      expiresAt: string;
+      /** Formato: uuid */
+      offerId: string;
+      /** Formato: uuid */
+      orderId: string;
+      /** Formato: date-time */
+      serverTime: string;
+      /** @enum {string} */
+      status: 'ASSIGNED' | 'AT_STORE' | 'CANCELED' | 'DELIVERED' | 'PICKED_UP' | 'SEARCHING';
+      /** Formato: int64 */
+      version: number;
+    };
+    TrainingOrderState: {
+      /** Formato: uuid */
+      orderId: string;
+      /** Formato: date-time */
+      serverTime: string;
+      /** @enum {string} */
+      status: 'ASSIGNED' | 'AT_STORE' | 'CANCELED' | 'DELIVERED' | 'PICKED_UP' | 'SEARCHING';
       /** Formato: int64 */
       version: number;
     };
@@ -1114,6 +1180,164 @@ export interface operations {
       };
       /** @description O grafo de roteamento ainda não está disponível. */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
+  createCourierTrainingOrder: {
+    parameters: {
+      query?: never;
+      header: {
+        'Idempotency-Key': string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TrainingOrderReceipt'];
+        };
+      };
+      /** @description Confira a chave de idempotência. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Entre na demonstração para continuar. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O token CSRF ou o papel não permite esta ação. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description A intenção de treino ou o estado e a posição do entregador mudaram. Consulte seu trabalho novamente. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Não há rota de treino disponível dentro da área atendida. */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Limite de criação ou de pedidos ativos atingido. */
+      429: {
+        headers: {
+          /** @description Segundos até uma nova tentativa, quando o bloqueio tem prazo conhecido. */
+          'Retry-After'?: number;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O despacho está em atualização ou o roteamento está indisponível. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+    };
+  };
+  cancelCourierTrainingOrder: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CancelTrainingOrderRequest'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TrainingOrderState'];
+        };
+      };
+      /** @description Confira o pedido e sua versão. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description Entre na demonstração para continuar. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O token CSRF ou o papel não permite esta ação. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description O pedido não existe ou não está visível neste contexto. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /** @description A versão ou a etapa do pedido mudou. Consulte o pedido novamente. */
+      409: {
         headers: {
           [name: string]: unknown;
         };

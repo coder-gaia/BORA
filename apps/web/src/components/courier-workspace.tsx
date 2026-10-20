@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, type FormEvent } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { lazy, Suspense } from 'react';
+import { Navigation, Pause, RefreshCw } from 'lucide-react';
+import { useAutoDrive } from '@/hooks/use-auto-drive';
+import { useTrainingOrder } from '@/hooks/use-training-order';
+import { CopyValue } from '@/components/order-code';
+import { pointForConfirmation, type DriveIdentity, type UncertainPosition } from '@/lib/auto-drive';
+import type { Position } from '@/lib/route-motion';
+import './courier-workspace.css';
 import { Button } from '@/components/ui/button';
 import { CourierOffer } from '@/components/courier-offer';
 import {
@@ -9,10 +16,17 @@ import {
   type DemoUserView,
   type PositionReceipt,
   type OrderView,
+  type CourierRouteView,
 } from '@/lib/api';
 import { useOrderUpdates, useRealtime } from '@/hooks/use-realtime';
 import { newerOrder } from '@/lib/realtime';
 import { OrderProgress } from '@/components/order-progress';
+import { statusLabel } from '@/lib/order-presentation';
+import { reconcileCourierWork } from '@/lib/courier-work';
+
+const DeliveryMap = lazy(() =>
+  import('@/components/delivery-map').then((module) => ({ default: module.DeliveryMap })),
+);
 
 const courierStatuses: Record<string, string> = {
   OFFLINE: 'Offline',
@@ -53,10 +67,31 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
   const [receipt, setReceipt] = useState<(PositionReceipt & { observedAt: number }) | null>(null);
   const [receiptClock, setReceiptClock] = useState(0);
   const [notice, setNotice] = useState('');
+  const [observedOrderId, setObservedOrderId] = useState<string | null>(null);
   const [completedOrderId, setCompletedOrderId] = useState<string | null>(null);
+  const [uncertainPosition, setUncertainPosition] = useState<UncertainPosition | null>(null);
+  const [drivenRoute, setDrivenRoute] = useState<CourierRouteView | null>(null);
   const work = useQuery({
     queryKey: ['courier-work', user.id],
-    queryFn: ({ signal }) => api.courierWork(signal),
+    async queryFn({ signal }) {
+      const incoming = await api.courierWork(signal);
+      const value = reconcileCourierWork(
+        incoming,
+        queryClient.getQueryData<CourierWorkView>(['courier-work', user.id]),
+      );
+      if (!signal.aborted) {
+        if (value.order) setObservedOrderId(value.order.id);
+        const current = value.order;
+        const nextIdentity: DriveIdentity | null =
+          current?.status === 'ASSIGNED'
+            ? { orderId: current.id, destination: 'PICKUP' }
+            : current?.status === 'PICKED_UP'
+              ? { orderId: current.id, destination: 'DROPOFF' }
+              : null;
+        setUncertainPosition((point) => (pointForConfirmation(point, nextIdentity) ? point : null));
+      }
+      return value;
+    },
     refetchInterval(query) {
       const status = query.state.data?.courier.status;
       const pendingPosition =
@@ -70,7 +105,7 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
   });
   const courier = work.data?.courier;
   const order = work.data?.order;
-  const timelineOrderId = order?.id ?? completedOrderId;
+  const timelineOrderId = order?.id ?? observedOrderId ?? completedOrderId;
   useOrderUpdates(timelineOrderId);
   const timeline = useQuery({
     queryKey: ['order', user.id, timelineOrderId],
@@ -88,11 +123,65 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
   });
   const latitude = inputLatitude ?? String(courier?.location?.latitude ?? -23.5614);
   const longitude = inputLongitude ?? String(courier?.location?.longitude ?? -46.6559);
-  const route = useQuery({
-    queryKey: ['courier-route', user.id, order?.id, order?.status, courier?.locationUpdatedAt],
-    queryFn: ({ signal }) => api.courierRoute(signal),
-    enabled: Boolean(order && courier?.location),
+
+  const identity: DriveIdentity | null =
+    order?.status === 'ASSIGNED'
+      ? { orderId: order.id, destination: 'PICKUP' }
+      : order?.status === 'PICKED_UP'
+        ? { orderId: order.id, destination: 'DROPOFF' }
+        : null;
+  const receiveDrivenPosition = useCallback(
+    (value: PositionReceipt) => {
+      setReceipt({ ...value, observedAt: performance.now() });
+      setNotice('');
+      void queryClient.invalidateQueries({ queryKey: ['courier-work', user.id] });
+    },
+    [queryClient, user.id],
+  );
+  const drive = useAutoDrive({
+    identity,
+    onUncertain(point) {
+      if (identity) setUncertainPosition({ ...identity, point });
+    },
+    onRoute(value) {
+      setDrivenRoute(value);
+      queryClient.setQueryData(['courier-route', user.id, order?.id, order?.status], value);
+    },
+    onWork(value) {
+      return queryClient.setQueryData<CourierWorkView>(['courier-work', user.id], (current) =>
+        reconcileCourierWork(value, current),
+      )!;
+    },
+    onReceipt: receiveDrivenPosition,
+    onInterrupted() {
+      void queryClient.invalidateQueries({ queryKey: ['courier-work', user.id] });
+    },
   });
+  const route = useQuery({
+    queryKey: ['courier-route', user.id, order?.id, order?.status],
+    queryFn: ({ signal }) => api.courierRoute(signal),
+    enabled:
+      Boolean(
+        order &&
+        courier?.location &&
+        courier.locationUpdatedAt &&
+        Date.parse(courier.locationUpdatedAt) >= Date.parse(order.assignedAt),
+      ) && !drive.driving,
+    staleTime: 10_000,
+    refetchOnMount: 'always',
+  });
+  const latestOrder =
+    order &&
+    (!timeline.data || order.id !== timeline.data.id || order.version > timeline.data.version)
+      ? order
+      : timeline.data;
+  const training = useTrainingOrder(user.id, refresh, latestOrder);
+  const mapRoute =
+    drivenRoute &&
+    drivenRoute.orderId === order?.id &&
+    drivenRoute.destination === identity?.destination
+      ? drivenRoute
+      : route.data;
 
   async function refresh() {
     await Promise.all([
@@ -133,12 +222,13 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
     },
   });
   const movement = useMutation({
-    mutationFn: () => api.sendPosition(position()),
+    mutationFn: (confirmedPoint?: Position) => api.sendPosition(confirmedPoint ?? position()),
     onMutate() {
       setReceipt(null);
       setNotice('');
     },
     onSuccess(value) {
+      if (value.accepted === 1) setUncertainPosition(null);
       setReceipt({ ...value, observedAt: performance.now() });
       setNotice('');
       void refresh();
@@ -158,6 +248,7 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
     mutationFn: () => api.deliverOrder(order!.id, order!.version, confirmationCode || undefined),
     onSuccess(value) {
       setCompletedOrderId(value.id);
+      training.observeOrder(value);
       setConfirmationCode('');
       setNotice('Entrega concluída. Você está disponível novamente.');
       void refresh();
@@ -166,12 +257,22 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
       void refresh();
     },
   });
-  const busy =
-    availability.isPending || movement.isPending || pickup.isPending || delivery.isPending;
   const persisted =
     receipt?.latestRecordedAt &&
     courier?.locationUpdatedAt &&
     Date.parse(courier.locationUpdatedAt) >= Date.parse(receipt.latestRecordedAt);
+  const awaitingPersistence = Boolean(receipt?.accepted === 1 && !persisted);
+  const busy =
+    availability.isPending ||
+    movement.isPending ||
+    pickup.isPending ||
+    delivery.isPending ||
+    drive.driving ||
+    training.pending;
+  const uncertainPoint = pointForConfirmation(uncertainPosition, identity);
+  const needsPositionConfirmation = Boolean(uncertainPoint);
+  const movementBlocked =
+    busy || awaitingPersistence || work.isFetching || Boolean(needsPositionConfirmation);
   useEffect(() => {
     if (!receipt || receipt.accepted === 0 || persisted) return;
     const timer = window.setInterval(() => setReceiptClock(performance.now()), 1_000);
@@ -181,7 +282,7 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
 
   function submitPosition(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    movement.mutate();
+    if (!movementBlocked) movement.mutate();
   }
 
   return (
@@ -232,7 +333,7 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
                     required
                     value={latitude}
                     onChange={(event) => setLatitude(event.target.value)}
-                    disabled={busy}
+                    disabled={movementBlocked}
                   />
                 </label>
                 <label>
@@ -246,20 +347,24 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
                     required
                     value={longitude}
                     onChange={(event) => setLongitude(event.target.value)}
-                    disabled={busy}
+                    disabled={movementBlocked}
                   />
                 </label>
               </div>
               <div className="role-options">
                 {courier.status === 'OFFLINE' ? (
-                  <Button type="button" disabled={busy} onClick={() => availability.mutate(true)}>
+                  <Button
+                    type="button"
+                    disabled={movementBlocked}
+                    onClick={() => availability.mutate(true)}
+                  >
                     Ficar online
                   </Button>
                 ) : (
                   <Button
                     type="button"
                     variant="outline"
-                    disabled={busy || courier.status !== 'AVAILABLE'}
+                    disabled={movementBlocked || courier.status !== 'AVAILABLE'}
                     onClick={() => availability.mutate(false)}
                   >
                     Ficar offline
@@ -268,7 +373,7 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
                 <Button
                   type="submit"
                   variant="outline"
-                  disabled={busy || courier.status === 'OFFLINE'}
+                  disabled={movementBlocked || courier.status === 'OFFLINE'}
                 >
                   {movement.isPending ? 'Enviando posição...' : 'Enviar posição'}
                 </Button>
@@ -284,7 +389,7 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
                   : persisted
                     ? 'Posição confirmada pelo servidor.'
                     : confirmationDelayed
-                      ? 'A confirmação está demorando. Envie a posição novamente.'
+                      ? 'A confirmação está demorando. Atualize seu trabalho para conferir a gravação.'
                       : 'Posição recebida. Aguardando confirmação do servidor.'}
               </p>
             )}
@@ -297,6 +402,54 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
         )}
       </section>
       {courier && (
+        <section className="courier-training" aria-labelledby="training-title">
+          <div>
+            <p className="eyebrow">Pratique uma entrega</p>
+            <h3 id="training-title">Treino no seu ritmo</h3>
+            <p className="demo-description">
+              Receba uma oferta privada e percorra cada etapa. Você decide quando aceitar, coletar e
+              concluir. O percurso automático começa somente ao seu comando.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            disabled={busy || (!training.recoverable && courier.status !== 'AVAILABLE')}
+            onClick={training.startOrRecover}
+          >
+            {training.recoverable ? 'Recuperar treino' : 'Criar pedido de treino'}
+          </Button>
+          <Failure error={training.error} />
+          {training.receipt && (
+            <div className="training-receipt">
+              <p>
+                Treino {training.receipt.orderId}. Estado: {statusLabel(training.receipt.status)}.
+              </p>
+              <p className="demo-description">
+                O código fica somente nesta tela. Use-o apenas ao concluir a entrega do treino.
+              </p>
+              <div className="training-code">
+                <span>Código deste treino</span>
+                <strong className="confirmation-code">{training.receipt.confirmationCode}</strong>
+                <CopyValue
+                  value={training.receipt.confirmationCode}
+                  label="Copiar código deste treino"
+                />
+              </div>
+              {['SEARCHING', 'ASSIGNED', 'AT_STORE'].includes(training.receipt.status) && (
+                <Button variant="outline" disabled={movementBlocked} onClick={training.finish}>
+                  Encerrar treino
+                </Button>
+              )}
+              {['DELIVERED', 'CANCELED'].includes(training.receipt.status) && (
+                <Button variant="outline" onClick={training.nextIntent}>
+                  Preparar novo treino
+                </Button>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+      {courier && (
         <CourierOffer userId={user.id} status={courier.status} busy={busy} onChanged={refresh} />
       )}
       {courier?.status === 'OFFLINE' && !order && (
@@ -305,6 +458,75 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
       {order && (
         <section className="order-detail" aria-labelledby="courier-order-title">
           <h3 id="courier-order-title">Entrega em andamento</h3>
+          <div className="courier-driving">
+            <Suspense fallback={<p className="demo-description">Preparando seu percurso...</p>}>
+              <DeliveryMap
+                pickup={order.store.location}
+                dropoff={order.dropoff}
+                courier={courier?.location}
+                geometry={
+                  mapRoute && mapRoute.geometry.length >= 2
+                    ? {
+                        type: 'LineString',
+                        coordinates: mapRoute.geometry.map((point) => [
+                          point.longitude,
+                          point.latitude,
+                        ]),
+                      }
+                    : null
+                }
+              />
+            </Suspense>
+            {identity && (
+              <div className="drive-actions">
+                {drive.driving ? (
+                  <Button onClick={drive.pause}>
+                    <Pause aria-hidden="true" /> Pausar direção
+                  </Button>
+                ) : (
+                  <Button
+                    disabled={movementBlocked || !courier?.location}
+                    onClick={() => {
+                      setLatitude(null);
+                      setLongitude(null);
+                      drive.start();
+                    }}
+                  >
+                    <Navigation aria-hidden="true" />
+                    {drive.state === 'paused' || drive.state === 'failed'
+                      ? 'Retomar direção'
+                      : identity.destination === 'PICKUP'
+                        ? 'Dirigir até a loja'
+                        : 'Dirigir até o cliente'}
+                  </Button>
+                )}
+              </div>
+            )}
+            {needsPositionConfirmation && (
+              <div className="drive-reconciliation">
+                <p className="demo-description" role="status">
+                  A resposta do último envio não foi confirmada. A posição pode ter sido recebida.
+                  Confirme o ponto enviado antes de retomar o percurso.
+                </p>
+                <Button
+                  variant="outline"
+                  disabled={busy || work.isFetching}
+                  onClick={() => {
+                    const point = pointForConfirmation(uncertainPosition, identity);
+                    if (point) movement.mutate(point);
+                    else void refresh();
+                  }}
+                >
+                  Confirmar posição enviada
+                </Button>
+              </div>
+            )}
+            {drive.message && (
+              <p className="demo-description" role="status">
+                {drive.message}
+              </p>
+            )}
+          </div>
           <p role="status">{orderStatuses[order.status] ?? 'Consulte o estado da entrega.'}</p>
           <dl className="order-fields">
             <div>
@@ -327,7 +549,7 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
           <div className="role-options">
             <Button
               variant="outline"
-              disabled={busy}
+              disabled={movementBlocked}
               onClick={() => {
                 setLatitude(String(order.store.location.latitude));
                 setLongitude(String(order.store.location.longitude));
@@ -337,7 +559,7 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
             </Button>
             <Button
               variant="outline"
-              disabled={busy}
+              disabled={movementBlocked}
               onClick={() => {
                 setLatitude(String(order.dropoff.latitude));
                 setLongitude(String(order.dropoff.longitude));
@@ -346,13 +568,15 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
               Usar posição do destino
             </Button>
           </div>
-          {route.data && (
+          {mapRoute && (
             <p className="demo-description">
-              Rota até {route.data.destination === 'PICKUP' ? 'a loja' : 'o cliente'}:{' '}
-              {(route.data.distanceMeters / 1_000).toLocaleString('pt-BR', {
+              Rota até {mapRoute.destination === 'PICKUP' ? 'a loja' : 'o cliente'}:{' '}
+              {(mapRoute.distanceMeters / 1_000).toLocaleString('pt-BR', {
                 maximumFractionDigits: 2,
               })}{' '}
-              km. Tempo estimado: {showDuration(route.data.simulatedDurationMillis)}.
+              km. Tempo estimado no ritmo da simulação:{' '}
+              {showDuration(mapRoute.simulatedDurationMillis)}. A chegada depende da posição
+              confirmada.
             </p>
           )}
           <Failure error={route.error} />
@@ -363,7 +587,7 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
             </p>
           )}
           {order.status === 'AT_STORE' && (
-            <Button disabled={busy} onClick={() => pickup.mutate()}>
+            <Button disabled={movementBlocked} onClick={() => pickup.mutate()}>
               Confirmar coleta
             </Button>
           )}
@@ -386,12 +610,12 @@ export function CourierWorkspace({ user }: { user: DemoUserView }) {
                     required
                     value={confirmationCode}
                     onChange={(event) => setConfirmationCode(event.target.value)}
-                    disabled={busy}
+                    disabled={movementBlocked}
                     autoComplete="off"
                   />
                 </label>
               )}
-              <Button type="submit" disabled={busy}>
+              <Button type="submit" disabled={movementBlocked}>
                 {delivery.isPending ? 'Concluindo...' : 'Confirmar entrega'}
               </Button>
             </form>

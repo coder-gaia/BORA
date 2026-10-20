@@ -156,6 +156,28 @@ class OpenApiConfiguration {
                                     "503",
                                     "O grafo de roteamento ainda não está disponível.");
                               }
+                              case "createCourierTrainingOrder" -> {
+                                error(
+                                    operation.getResponses(),
+                                    "400",
+                                    "Confira a chave de idempotência.");
+                                error(
+                                    operation.getResponses(),
+                                    "409",
+                                    "A intenção de treino ou o estado e a posição do entregador mudaram. Consulte seu trabalho novamente.");
+                                error(
+                                    operation.getResponses(),
+                                    "422",
+                                    "Não há rota de treino disponível dentro da área atendida.");
+                                error(
+                                    operation.getResponses(),
+                                    "429",
+                                    "Limite de criação ou de pedidos ativos atingido.");
+                                error(
+                                    operation.getResponses(),
+                                    "503",
+                                    "O despacho está em atualização ou o roteamento está indisponível.");
+                              }
                               case "listOrders" ->
                                   error(
                                       operation.getResponses(),
@@ -166,7 +188,7 @@ class OpenApiConfiguration {
                                       operation.getResponses(),
                                       "404",
                                       "O recurso não existe ou não está visível neste contexto.");
-                              case "cancelOrder", "reassignOrder" -> {
+                              case "cancelOrder", "reassignOrder", "cancelCourierTrainingOrder" -> {
                                 error(
                                     operation.getResponses(),
                                     "400",
