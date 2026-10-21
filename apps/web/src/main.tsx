@@ -15,6 +15,7 @@ const mount = () => {
   if (
     root.hasChildNodes() &&
     !window.location.pathname.startsWith('/rastreio/') &&
+    window.location.pathname !== '/como-funciona' &&
     window.location.pathname !== '/loja' &&
     window.location.pathname !== '/entregador' &&
     window.location.pathname !== '/operacao'

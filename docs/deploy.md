@@ -350,6 +350,15 @@ observaram a API nova saudável. Depois da ativação, a oferta foi criada. O ro
 imagens anteriores preservou o prazo de outra oferta, que expirou e liberou o entregador pela
 varredura da versão restaurada.
 
+Na primeira publicação com CSP lida de arquivo, o [probe público de 600
+segundos](benchmarks/m13-public-continuity.json) reprovou: 11.839 sucessos em 11.842 requisições e
+três fechamentos TCP. Logs confirmam um reload estrutural antes da primeira recriação de API. As
+falhas são temporalmente compatíveis com esse reload, considerando o desvio de aproximadamente 0,7 s
+entre relógios medido depois; a atribuição permanece uma inferência. O resultado não qualifica a
+atualização normal com Caddyfile estável. No snapshot final, o simulador estava UP com 120
+entregadores e zero erros persistentes, mas registrava dois HTTP 503 transitórios de gravação
+atrasada de posições; esses contadores são distintos das falhas do probe.
+
 ## Monitorar
 
 Após confirmar o HTTPS, configurar no UptimeRobot os monitores HTTP da página inicial e de

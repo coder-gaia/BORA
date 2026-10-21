@@ -1,0 +1,480 @@
+.how-page-header {
+  display: flex;
+  min-height: 88px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.how-page-header nav,
+.how-back-link {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.how-page-header nav a {
+  color: var(--foreground);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.how-page-header nav [aria-current='page'] {
+  color: var(--muted-foreground);
+}
+
+.how-back-link {
+  gap: 7px;
+}
+
+.how-page-main:focus:not(:focus-visible),
+.how-page-main h2:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.how-page-main:focus-visible,
+.how-page-main h2:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 6px;
+}
+
+.how-page-main h2[id] {
+  scroll-margin-top: 28px;
+}
+
+.how-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.8fr);
+  align-items: center;
+  gap: clamp(32px, 7vw, 112px);
+  padding: clamp(28px, 5vw, 72px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.how-kicker {
+  margin: 0 0 16px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.how-intro h1 {
+  max-width: 620px;
+  font-size: clamp(36px, 4.3vw, 62px);
+  line-height: 1.08;
+  letter-spacing: -0.055em;
+}
+
+.how-intro-copy {
+  max-width: 490px;
+  margin: 24px 0;
+  color: var(--muted-foreground);
+  font-size: 16px;
+  line-height: 1.75;
+}
+
+.how-intro-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 24px;
+}
+
+.how-primary-link,
+.how-text-link {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.how-primary-link {
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 10px 15px;
+  background: var(--primary);
+}
+
+.how-primary-link:hover {
+  background: #e5a800;
+}
+
+.how-text-link:hover,
+.how-page-header nav a:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.how-demo-note,
+.how-journey-caption {
+  margin: 24px 0 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.how-journey {
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+}
+
+.how-journey ol {
+  display: grid;
+  gap: 20px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.how-journey li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.how-journey-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--card);
+}
+
+.how-journey-finish {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.how-journey small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.how-section,
+.how-details {
+  padding-block: 56px;
+}
+
+.how-section-heading {
+  max-width: 620px;
+  margin-bottom: 28px;
+}
+
+.how-section-heading .how-kicker {
+  margin-bottom: 12px;
+}
+
+.how-page-main h2 {
+  font-size: clamp(25px, 2.5vw, 34px);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.04em;
+}
+
+.how-section-heading > p:last-child:not(.how-kicker),
+.how-training p:not(.how-kicker),
+.how-training li,
+.how-details dd {
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.how-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.how-step-number {
+  display: block;
+  margin-bottom: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.how-steps h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.how-steps p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.how-training {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 48px;
+  padding: 36px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+
+.how-training p:not(.how-kicker) {
+  margin: 20px 0;
+}
+
+.how-training ol {
+  display: grid;
+  align-content: center;
+  gap: 20px;
+  margin: 0;
+  padding-left: 22px;
+}
+
+.how-training li {
+  padding-left: 8px;
+}
+
+.how-training li::marker,
+.how-training strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.how-areas {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.how-areas > a {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.how-areas > a:hover {
+  border-color: var(--muted-foreground);
+}
+
+.how-areas strong {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.how-areas a > span:not(.how-area-action) {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.how-area-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.how-details {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr);
+  gap: 64px;
+  border-top: 1px solid var(--border);
+}
+
+.how-details dl {
+  margin: 0;
+}
+
+.how-details dl > div + div {
+  margin-top: 24px;
+}
+
+.how-details dt {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.how-details dd {
+  margin: 0;
+}
+
+.how-page-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-top: 1px solid var(--border);
+  padding-block: 28px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.how-page-footer > div {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.how-page-footer strong {
+  color: var(--foreground);
+  font-size: 20px;
+  letter-spacing: -1px;
+}
+
+.how-page-footer p {
+  margin: 0;
+}
+
+.how-page-footer a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: inherit;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 900px) {
+  .how-intro {
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 0.8fr);
+    gap: 28px;
+    padding: 32px;
+  }
+
+  .how-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .how-training {
+    gap: 28px;
+    padding: 28px;
+  }
+
+  .how-areas > a {
+    padding: 20px;
+  }
+
+  .how-details {
+    gap: 32px;
+  }
+}
+
+@media (max-width: 600px) {
+  .how-page-header {
+    min-height: 76px;
+    gap: 12px;
+  }
+
+  .how-page-header nav {
+    gap: 12px;
+  }
+
+  .how-page-header nav a {
+    font-size: 12px;
+  }
+
+  .how-page-header nav [aria-current='page'] {
+    display: none;
+  }
+
+  .how-intro {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+    padding: 24px 20px;
+  }
+
+  .how-intro h1 {
+    font-size: clamp(36px, 9vw, 48px);
+  }
+
+  .how-intro-copy {
+    margin-block: 20px;
+    font-size: 14px;
+  }
+
+  .how-intro-actions {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .how-journey {
+    padding: 20px 16px;
+  }
+
+  .how-section,
+  .how-details {
+    padding-block: 36px;
+  }
+
+  .how-steps,
+  .how-training,
+  .how-areas,
+  .how-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .how-steps {
+    gap: 24px;
+  }
+
+  .how-step-number {
+    margin-bottom: 12px;
+  }
+
+  .how-training {
+    gap: 24px;
+    padding: 24px 20px;
+  }
+
+  .how-training .how-primary-link {
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .how-training .how-primary-link svg {
+    flex-shrink: 0;
+  }
+
+  .how-details {
+    gap: 0;
+  }
+
+  .how-page-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+}

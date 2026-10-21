@@ -182,3 +182,82 @@ Os relatórios completos, screenshots, falhas iniciais e hashes ficam em
 `%TEMP%/bora-m13-web` na qualificação local. O CI preserva seus relatórios e anexos como
 artefatos. Os arquivos de planejamento pessoal não fazem parte dessas evidências
 versionadas.
+
+## Página Como funciona (M14)
+
+A qualificação local da página `/como-funciona` ocorreu em 21 de outubro de 2026, sobre
+o frontend integrado ao M14. Formatação, lint, tipos, os 65 testes unitários e o build
+com pré-renderização passaram. As imagens de produção e desenvolvimento foram
+reconstruídas com as mesmas fontes congeladas durante o ensaio.
+
+O catálogo passa a 42 casos em 17 arquivos. Os três novos casos de
+`how-it-works.spec.ts`, em 320, 390 e 1440 pixels, passaram em 23,37 segundos, com um
+worker, sem skips ou retries. Eles verificam a descoberta pela página inicial, acesso
+direto após recarregar, título e descrição, atalhos para o conteúdo e as etapas,
+continuidade do foco por teclado e ausência de contorno nos títulos ao usar o mouse.
+Os links das três áreas foram percorridos sem criar sessão de demonstração, trocar de
+papel ou enviar requisições de alteração à API. Os 39 casos anteriores mantêm as
+evidências de execução registradas nas seções do M13.
+
+As três auditorias axe-core 4.14.0 da nova página usaram o helper de mesma origem com a
+CSP real de produção, sem desabilitar regras ou usar `bypassCSP`. Houve zero violações,
+zero resultados `incomplete` e nenhum transbordamento horizontal. A revisão dos três
+screenshots completos confirmou texto, etapas, links e botões sem cortes ou
+sobreposição nas larguras verificadas. Não houve erros de JavaScript, de hidratação
+ou de CSP observados pelos casos.
+
+O Caddy isolado em `http://127.0.0.1:19115` serviu a imagem de produção com ponte para
+o cluster local de duas APIs em `18080`. O HTML nativo, o HTML da imagem e o HTML
+servido tiveram o mesmo SHA-256:
+`98f2eb14dc0749bd1114181e46aa2ee46fe953b36804c72329debcf86e518b69`.
+A imagem web tem identificador
+`sha256:7f559e1f93ffa29542aa448d30308ba84053db50bae997b8719fb2ee81ebe115`.
+A verificação HTTP confirmou a CSP exata do repositório, os cabeçalhos de segurança,
+MIME e cache dos recursos, além do bloqueio das rotas internas.
+
+Entre 15:41:20 e 15:41:57 UTC, três processos novos do Chromium executaram Lighthouse
+13.5.0 na página inicial, com a mesma configuração mobile simulada do M13. As
+execuções foram sequenciais, depois dos testes, sem outro navegador de qualificação
+ou build concorrente.
+
+| Medição da página inicial no M14 | Resultado                      |
+| -------------------------------- | ------------------------------ |
+| Desempenho                       | 92 / 93 / 93; mediana 93       |
+| Acessibilidade                   | 100 / 100 / 100                |
+| LCP                              | 3.179 / 3.116 / 3.129 ms       |
+| TBT                              | 99,8 / 34 / 29 ms              |
+| CLS e avisos do Lighthouse       | 0 e nenhum, nas três execuções |
+
+As fontes protegidas do mapa, `home.css` e o raster aprovado mantiveram seus hashes.
+As provas de renderização com 300 posições permanecem as do M13; esse benchmark não
+foi repetido no M14. O [registro compacto da qualificação](benchmarks/m14-web.json)
+reúne resultados, escopo e hashes. Os casos estão em
+[`how-it-works.spec.ts`](../apps/web/tests/how-it-works.spec.ts), e os jobs de qualidade
+preservam seus relatórios e anexos como artefatos.
+
+### Capas de compartilhamento
+
+Depois dessa qualificação foram acrescentados metadados Open Graph e Twitter
+estáticos ao HTML e uma capa PNG de 1200 por 630 pixels, com 360.538 bytes. A variante
+para a prévia social do repositório tem 1280 por 640 pixels e 393.004 bytes. Ambas são
+opacas e usam Inter local, a identidade amarela e preta e o raster aprovado, com
+créditos cartográficos visíveis. O
+[`gerador HTML/CSS`](../apps/web/scripts/generate-og-image.mjs) renderiza cada tamanho
+diretamente com Playwright, sem rede ou redimensionamento de uma imagem pronta.
+
+O build de produção foi reconstruído e o HTML nativo, o da imagem e o servido pelo
+Caddy tiveram SHA-256
+`b2c23a851e7e279db901f85291907d579f7e8ff7fe101f8d51b25a08b26ccd76`.
+A imagem final tem identificador
+`sha256:018249a7b7e4b833e046bf7aaccd77b20102221213b263ece17a2c5f69bc4925`.
+As verificações HTTP de segurança e CSP passaram novamente. Outros 92 checks
+conferiram os metadados no HTML original e servido, URLs absolutas, dimensões,
+formato RGB opaco, MIME `image/png`, tamanho e hashes dos PNGs.
+
+Os 25 recursos JS/CSS compilados mantiveram seus nomes e bytes. A capa aparece
+somente em metadados, sem `preload`, elemento de imagem ou referência no CSS ou no
+JavaScript da aplicação; ela não acrescenta um recurso à navegação inicial. Os
+resultados dos 65 testes unitários, dos três fluxos, do axe e do Lighthouse acima
+pertencem ao HTML anterior aos metadados de compartilhamento. Essas medições foram
+preservadas, com a equivalência dos recursos compilados registrada no
+[JSON de evidências](benchmarks/m14-web.json).

@@ -1,0 +1,104 @@
+{
+  "recordedAt": "2026-10-21T15:53:14.645Z",
+  "scope": "Local production-CSP qualification of the three new M14 page cases, followed by static social metadata and PNG qualification. The other 39 catalogue cases retain their separate M13 evidence.",
+  "beforeSocialMetadata": {
+    "htmlSha256": "98f2eb14dc0749bd1114181e46aa2ee46fe953b36804c72329debcf86e518b69",
+    "productionImage": "sha256:7f559e1f93ffa29542aa448d30308ba84053db50bae997b8719fb2ee81ebe115",
+    "sourceManifestSha256": "ee8cdea19e35ceb5b8050b7d4321dfcfa6302c06217ee11f2bb5cf1e98325873",
+    "nativeChecks": ["format:check", "lint", "typecheck", "test:unit", "build"],
+    "unitTests": {
+      "passed": 65,
+      "failed": 0,
+      "skipped": 0
+    },
+    "browser": {
+      "catalogueCases": 42,
+      "catalogueFiles": 17,
+      "executedCases": 3,
+      "viewports": [320, 390, 1440],
+      "seconds": 23.372,
+      "workers": 1,
+      "retries": 0,
+      "skipped": 0,
+      "unexpected": 0,
+      "axeAudits": 3,
+      "axeViolations": 0,
+      "axeIncompleteTargets": 0,
+      "horizontalOverflow": false,
+      "mutationRequests": 0,
+      "visualReview": "pass"
+    },
+    "lighthouse": {
+      "version": "13.5.0",
+      "page": "/",
+      "method": "Default simulated mobile, three fresh Chromium processes, sequential runs, no concurrent build or QA browser.",
+      "startedAt": "2026-10-21T15:41:20.635Z",
+      "finishedAt": "2026-10-21T15:41:57.372Z",
+      "performance": [92, 93, 93],
+      "medianPerformance": 93,
+      "accessibility": [100, 100, 100],
+      "cls": [0, 0, 0],
+      "warnings": [0, 0, 0]
+    }
+  },
+  "finalSocialMetadata": {
+    "htmlSha256": "b2c23a851e7e279db901f85291907d579f7e8ff7fe101f8d51b25a08b26ccd76",
+    "productionImage": "sha256:018249a7b7e4b833e046bf7aaccd77b20102221213b263ece17a2c5f69bc4925",
+    "nativeBuild": "pass",
+    "httpSecurity": "pass",
+    "productionCsp": "exact repository policy",
+    "ogChecks": 92,
+    "compiledJsCss": {
+      "count": 25,
+      "sameNamesAndBytes": true,
+      "previousManifestSha256": "19de01a8ba677af0eb50dff273114e0b09cbeff67f7c709e15ea54bbb888fefe",
+      "finalManifestSha256": "19de01a8ba677af0eb50dff273114e0b09cbeff67f7c709e15ea54bbb888fefe"
+    },
+    "initialNavigation": {
+      "ogImageReferences": "static meta tags only",
+      "ogImagePreload": false,
+      "imageOrCompiledJsCssReference": false
+    },
+    "priorFlowsAxeAndLighthouseRerun": false
+  },
+  "images": [
+    {
+      "path": "apps/web/public/og-image.png",
+      "width": 1200,
+      "height": 630,
+      "format": "PNG",
+      "color": "opaque RGB",
+      "bytes": 360538,
+      "sha256": "df058464eaa369bc35dc2f149e5d5216aaab97a643bdb24eefb94e3e8ae0c321",
+      "servedMime": "image/png"
+    },
+    {
+      "path": "docs/imagens/github-social-preview.png",
+      "width": 1280,
+      "height": 640,
+      "format": "PNG",
+      "color": "opaque RGB",
+      "bytes": 393004,
+      "sha256": "3995d591443c42c547828ad6d7dfd124c3415b8f93886c76f9d26d059a2f1a41",
+      "destination": "manual repository social-preview upload"
+    }
+  ],
+  "generator": {
+    "path": "apps/web/scripts/generate-og-image.mjs",
+    "browser": "156.0.8078.4",
+    "font": "Inter Variable, self-hosted Latin",
+    "fontSha256": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62",
+    "rasterSha256": "4e2354958a9a93c108c90ab79bbe8bd6735928727818b4109d74cd1c8b3f570f",
+    "networkRequests": 0,
+    "nativeRenderPerSize": true
+  },
+  "map": {
+    "protectedSourcesUnchanged": true,
+    "repeated300MarkerBenchmark": false,
+    "existingQualification": "docs/qualidade-web.md, M13 results"
+  },
+  "limits": [
+    "Loopback HTTP with production CSP; public TLS issuance and geographic latency are separate checks.",
+    "Lighthouse and guide-flow metrics describe the artifact before social metadata. Reuse is justified by identical compiled JS/CSS and the absence of an initial OG image resource."
+  ]
+}

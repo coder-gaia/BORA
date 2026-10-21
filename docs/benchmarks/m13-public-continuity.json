@@ -1,0 +1,241 @@
+{
+  "qualified": false,
+  "measurement": {
+    "url": "https://bora.alexandregaia.me",
+    "startedAt": "2026-10-21T15:46:47.942Z",
+    "finishedAt": "2026-10-21T15:56:48.043Z",
+    "requestedDurationSeconds": 600,
+    "elapsedMs": 600099.66,
+    "intervalMs": 50,
+    "timeoutMs": 5000,
+    "interrupted": false,
+    "sessionChecked": true,
+    "totals": {
+      "requests": 11842,
+      "successes": 11839,
+      "failures": 3,
+      "p95LatencyMs": 164.95
+    },
+    "endpoints": [
+      {
+        "path": "/",
+        "requests": 4054,
+        "successes": 4053,
+        "failures": 1,
+        "p95LatencyMs": 156.25,
+        "failureExamples": [
+          {
+            "at": "2026-10-21T15:48:38.879Z",
+            "latencyMs": 105.8,
+            "reason": "request_error",
+            "errorName": "TypeError",
+            "errorCode": "UND_ERR_SOCKET",
+            "errorMessage": "other side closed"
+          }
+        ]
+      },
+      {
+        "path": "/actuator/health/readiness",
+        "requests": 4052,
+        "successes": 4051,
+        "failures": 1,
+        "p95LatencyMs": 157.47,
+        "failureExamples": [
+          {
+            "at": "2026-10-21T15:48:38.872Z",
+            "latencyMs": 100.33,
+            "reason": "request_error",
+            "errorName": "TypeError",
+            "errorCode": "UND_ERR_SOCKET",
+            "errorMessage": "other side closed"
+          }
+        ]
+      },
+      {
+        "path": "/api/v1/auth/me",
+        "requests": 3736,
+        "successes": 3735,
+        "failures": 1,
+        "p95LatencyMs": 182.76,
+        "failureExamples": [
+          {
+            "at": "2026-10-21T15:48:38.875Z",
+            "latencyMs": 124.34,
+            "reason": "request_error",
+            "errorName": "TypeError",
+            "errorCode": "UND_ERR_SOCKET",
+            "errorMessage": "other side closed"
+          }
+        ]
+      }
+    ]
+  },
+  "review": {
+    "classification": "Reprovado no critério de continuidade HTTP estrita. As três falhas são temporalmente compatíveis com o reload estrutural da primeira adoção da CSP por arquivo; essa atribuição é uma inferência, sem causalidade absoluta.",
+    "failures": [
+      {
+        "endpoint": "/",
+        "at": "2026-10-21T15:48:38.879Z",
+        "latencyMs": 105.8,
+        "reason": "request_error",
+        "errorName": "TypeError",
+        "errorCode": "UND_ERR_SOCKET",
+        "errorMessage": "other side closed"
+      },
+      {
+        "endpoint": "/actuator/health/readiness",
+        "at": "2026-10-21T15:48:38.872Z",
+        "latencyMs": 100.33,
+        "reason": "request_error",
+        "errorName": "TypeError",
+        "errorCode": "UND_ERR_SOCKET",
+        "errorMessage": "other side closed"
+      },
+      {
+        "endpoint": "/api/v1/auth/me",
+        "at": "2026-10-21T15:48:38.875Z",
+        "latencyMs": 124.34,
+        "reason": "request_error",
+        "errorName": "TypeError",
+        "errorCode": "UND_ERR_SOCKET",
+        "errorMessage": "other side closed"
+      }
+    ],
+    "deploy": {
+      "runId": 39628738000,
+      "jobId": 119321608121,
+      "jobUrl": "https://github.com/coder-gaia/BORA/actions/runs/39628738000/job/119321608121",
+      "structuralReloadLog": {
+        "line": 307,
+        "text": "2026-10-21T15:48:39.4194464Z Aplicando alteração real da configuração do Caddy por reload."
+      },
+      "firstApiRecreateLog": {
+        "line": 313,
+        "text": "2026-10-21T15:48:45.6897681Z  Container bora-prod-api1-1 Recreate "
+      },
+      "proxyEvents": [
+        {
+          "atVm": "2026-10-21T15:48:39.522962868Z",
+          "logger": "admin.api",
+          "message": "received request",
+          "method": "POST",
+          "uri": "/load"
+        },
+        {
+          "atVm": "2026-10-21T15:48:39.526370622Z",
+          "logger": "http",
+          "message": "servers shutting down; grace period initiated",
+          "duration": 45
+        },
+        {
+          "atVm": "2026-10-21T15:48:39.527897420Z",
+          "logger": "admin.api",
+          "message": "load complete"
+        },
+        {
+          "atVm": "2026-10-21T15:48:39.533467850Z",
+          "logger": "admin",
+          "message": "stopped previous server"
+        }
+      ]
+    },
+    "firstPolicyFileMigration": {
+      "previousBundle": "960d620f85f4a5957e546e6d50ffab5f726346ae",
+      "newBundle": "5a862c56b28d5b39bc82c92d97929d422fb8124d",
+      "previousCaddyfile": "CSP literal no header, linha 40.",
+      "newCaddyfile": "Leitura do arquivo content-security-policy, linha 35; header por variável, linha 46."
+    },
+    "clockReview": {
+      "measuredAfterDeployment": true,
+      "sampleCount": 3,
+      "observedAtLocal": "2026-10-21T16:01:51.984025+00:00",
+      "vmMinusLocalLowerMs": 630.701446,
+      "vmMinusLocalUpperMs": 768.451879,
+      "method": "Três leituras por um único canal SSH já estabelecido; limites não presumem simetria da rede.",
+      "limitation": "Não há calibração contemporânea no probe original. O desvio posterior de aproximadamente 0,7 s torna os horários compatíveis, mas não prova sua estabilidade histórica."
+    },
+    "afterSnapshot": {
+      "atVm": "2026-10-21T15:57:03Z",
+      "containers": {
+        "caddy": {
+          "id": "369b753051549284506adaa75b6648ea4dd33ea2b8623bd52081ef835a450c3b",
+          "startedAt": "2026-10-18T17:24:18.873511484Z",
+          "health": "healthy",
+          "oomKilled": false,
+          "restarts": 0
+        },
+        "db": {
+          "id": "b86cd9a24fe257cdc44508a776d539da1cbbb2989b04d3741e611c573cb9e03d",
+          "startedAt": "2026-10-18T17:32:04.193344181Z",
+          "health": "healthy",
+          "oomKilled": false,
+          "restarts": 0
+        },
+        "api1": {
+          "id": "b361a386eae9399fe677ad2bd09785a6ef07b2c9a7d9d84ac164282226e15e73",
+          "startedAt": "2026-10-21T15:48:47.13112679Z",
+          "health": "healthy",
+          "oomKilled": false,
+          "restarts": 0
+        },
+        "api2": {
+          "id": "9a3419228249f89f1237d2f7d4e00ec503139abe6ae6467a7a329114d16465bf",
+          "startedAt": "2026-10-21T15:49:10.111419283Z",
+          "health": "healthy",
+          "oomKilled": false,
+          "restarts": 0
+        },
+        "simulator": {
+          "id": "4f45544863af6c5c82b382cdb3d22d9b10222a2d526f6eaaa3682b1d8e240bd4",
+          "startedAt": "2026-10-21T15:49:28.706563243Z",
+          "health": "healthy",
+          "oomKilled": false,
+          "restarts": 0
+        }
+      },
+      "simulator": {
+        "status": "UP",
+        "couriersKnown": 120,
+        "couriersOnline": 120,
+        "couriersWithPersistentContractErrors": 0,
+        "http503": 2,
+        "apiError503_POSITION_STORAGE_DELAYED": 2,
+        "apiUnavailable": 2
+      },
+      "note": "Os dois HTTP 503 transitórios do simulador são contadores distintos das três falhas de transporte do probe; não representam novos erros persistentes."
+    },
+    "limits": [
+      "O relatório nativo permanece intacto e a qualificação permanece falsa; a sessão foi exigida pelo oráculo original.",
+      "A primeira recriação de API ocorreu depois da janela de falhas, inclusive considerando os limites do desvio medido posteriormente.",
+      "Este resultado não mede uma atualização normal das APIs com Caddyfile estável nem reclassifica o ensaio isolado de reload estrutural.",
+      "Nenhum probe foi repetido, relógio ajustado ou estado do servidor alterado nesta revisão."
+    ],
+    "sources": [
+      {
+        "name": "m13-public-continuity.json",
+        "sha256": "469a4d398d8a36cfe0932d5320b5731d75c80406063151a4b8ec0258217e5ca1",
+        "nativeReportUnmodified": true
+      },
+      {
+        "name": "release-deploy.log",
+        "sha256": "d70f7342eb26e3d974f37298bb919143fcade9b54d962ce1b45b0f7eff76eda1",
+        "url": "https://github.com/coder-gaia/BORA/actions/runs/39628738000/job/119321608121"
+      },
+      {
+        "name": "caddy-system-window.log",
+        "sha256": "612ba7be621106f26a9a84938ee584b4d5ff13f5dcf194ef65246d174b6b42b5",
+        "readOnlySsh": true,
+        "windowStartVm": "2026-10-21T15:48:30Z",
+        "windowEndVm": "2026-10-21T15:48:45Z"
+      },
+      {
+        "name": "m13-vm-after.log",
+        "sha256": "cf7cd443ba1afe93c058be08184f0ce3a27990c77556115fcf02a543111493f2"
+      },
+      {
+        "name": "clock-offset.json",
+        "sha256": "788ba9b083071b7b57f66ffb9e1dfc4e0aeb92737e54ef10188999475c43dc6b"
+      }
+    ]
+  }
+}

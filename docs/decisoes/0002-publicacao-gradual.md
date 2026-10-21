@@ -8,7 +8,7 @@ O ambiente precisa exercitar concorrência entre duas instâncias da API e permi
 gradual dentro de uma única VM. Reiniciar o proxy a cada troca da web interromperia conexões
 e invalidaria a continuidade que se pretende medir.
 
-A medição pública do M02 também identificou encerramentos de conexões HTTP persistentes
+Medições públicas identificaram encerramentos de conexões HTTP persistentes
 durante reloads do Caddy, mesmo mantendo seu processo. Um teste com as APIs imóveis reproduziu
 o problema ao alternar apenas os upstreams por reload. Preservar o container não basta para
 preservar essas conexões.
@@ -44,8 +44,9 @@ estáticos, preservando os dados e a versão do banco. Migrações precisam ser 
 duas versões da API em execução.
 
 Assets, imagens e bundles do ponto de recuperação precisam permanecer disponíveis. A VM e o
-banco continuam sendo pontos únicos de falha. Conexões WebSocket poderão reconectar durante
-alterações de configuração e precisarão recuperar o estado quando forem implementadas.
+banco continuam sendo pontos únicos de falha. Conexões WebSocket podem reconectar durante
+a substituição de APIs ou alterações de configuração; os clientes recuperam o estado por
+[snapshots autorizados](0005-tempo-real-e-snapshots.md).
 
 Referências: [variáveis por requisição](https://caddyserver.com/docs/caddyfile/directives/vars),
 [placeholders de arquivos](https://caddyserver.com/docs/conventions#placeholders) e

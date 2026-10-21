@@ -19,8 +19,24 @@ const OperationsPage = lazy(() =>
 const PublicTrackingPage = lazy(() =>
   import('@/components/public-tracking').then((module) => ({ default: module.PublicTrackingPage })),
 );
+const HowItWorksPage = lazy(() =>
+  import('@/components/how-it-works').then((module) => ({ default: module.HowItWorksPage })),
+);
 
 export function App() {
+  if (typeof window !== 'undefined' && window.location.pathname === '/como-funciona') {
+    return (
+      <Suspense
+        fallback={
+          <main className="tracking-route-loading" role="status">
+            Preparando o passo a passo...
+          </main>
+        }
+      >
+        <HowItWorksPage />
+      </Suspense>
+    );
+  }
   if (typeof window !== 'undefined' && window.location.pathname === '/operacao') {
     return (
       <Suspense
@@ -99,7 +115,7 @@ export function App() {
           bora<span aria-hidden="true">.</span>
         </a>
         <nav aria-label="Navegação principal">
-          <a href="#como-funciona">
+          <a href="/como-funciona">
             Como funciona <ArrowUpRight size={14} aria-hidden="true" />
           </a>
           <a className="home-header-cta" href="#demonstracao">
@@ -138,6 +154,9 @@ export function App() {
               <br />
               Sua entrega também.
             </h2>
+            <a className="home-text-link" href="/como-funciona">
+              Ver o passo a passo <ArrowUpRight size={16} aria-hidden="true" />
+            </a>
           </div>
           <ol>
             <li>

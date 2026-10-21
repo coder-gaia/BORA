@@ -87,7 +87,9 @@ test('abre e recarrega rastreio anônimo com código base64url, atualiza pelo so
   });
   await page.goto(`/rastreio/${code}`);
   await expect(page.getByRole('heading', { name: 'Cada etapa, no seu tempo.' })).toBeVisible();
-  await expect(page.getByRole('status')).toHaveText('Entregador a caminho da loja');
+  await expect(page.locator('#tracking-content').getByRole('status')).toHaveText(
+    'Entregador a caminho da loja',
+  );
   const pickup = page.getByRole('definition').filter({ hasText: 'Loja do rastreio' });
   await expect(pickup).toContainText('Loja do rastreio');
   await expect(pickup).toContainText('-23.5614, -46.6559');
@@ -122,22 +124,39 @@ test('abre e recarrega rastreio anônimo com código base64url, atualiza pelo so
   };
   current = pickedUp;
   send(pickedUp);
-  await expect(page.getByRole('status')).toHaveText('A caminho do cliente');
+  await expect(page.locator('#tracking-content').getByRole('status')).toHaveText(
+    'A caminho do cliente',
+  );
   send(initial);
-  await expect(page.getByRole('status')).toHaveText('A caminho do cliente');
+  await expect(page.locator('#tracking-content').getByRole('status')).toHaveText(
+    'A caminho do cliente',
+  );
   await page.reload();
-  await expect(page.getByRole('status')).toHaveText('A caminho do cliente');
+  await expect(page.locator('#tracking-content').getByRole('status')).toHaveText(
+    'A caminho do cliente',
+  );
   expect(logins).toBe(0);
   expect(errors).toEqual([]);
   await page.getByRole('link', { name: 'Conhecer o Bora' }).click();
   await expect(page.getByRole('heading', { name: /Cada entrega/ })).toBeVisible();
   await page.goBack();
-  await expect(page.getByRole('status')).toHaveText('A caminho do cliente');
+  await expect(page.locator('#tracking-content').getByRole('status')).toHaveText(
+    'A caminho do cliente',
+  );
   expect(errors).toEqual([]);
 });
 
 test('revalida o rastreio conectado e limpa os dados quando o link expira', async ({ page }) => {
   await page.clock.install();
+  // Keep the prerendered home visible while the first two mounting frames are delayed.
+  await page.addInitScript(() => {
+    const frame = window.requestAnimationFrame.bind(window);
+    let mountingFrames = 2;
+    window.requestAnimationFrame = (callback) =>
+      mountingFrames-- > 0
+        ? frame((time) => window.setTimeout(() => callback(time), 150))
+        : frame(callback);
+  });
   let expired = false;
   let reads = 0;
   let subscribed = false;
@@ -162,7 +181,9 @@ test('revalida o rastreio conectado e limpa os dados quando o link expira', asyn
     }),
   );
   await page.goto(`/rastreio/${code}`);
-  await expect(page.getByRole('status')).toHaveText('Entregador a caminho da loja');
+  await expect(page.locator('#tracking-content').getByRole('status')).toHaveText(
+    'Entregador a caminho da loja',
+  );
   await expect(page.getByRole('definition').filter({ hasText: 'Loja do rastreio' })).toBeVisible();
   await expect.poll(() => subscribed).toBe(true);
   const before = reads;

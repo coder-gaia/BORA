@@ -1,181 +1,129 @@
 # Arquitetura
 
-Bora mantém API, simulador e interface em um monorepo. O backend evolui como monolito modular,
-com transações locais e fronteiras verificáveis. A base atual contém saúde operacional,
-máquinas de estado, esquema PostGIS, sessões compartilhadas, pedidos autenticados, histórico
-transacional e roteamento embutido. Um processo separado simula lojas e entregadores por HTTP,
-com sessões independentes por ator e sem acesso direto ao banco.
+O Bora demonstra o ciclo de uma entrega em São Paulo: a loja cria um pedido, o despacho
+seleciona um entregador pelo tempo de rota, e a operação acompanha ofertas, coleta e entrega.
+A interface React 19 usa uma API Java 25 com Spring Boot 4.1.1. API, web e simulador vivem no
+mesmo repositório; o backend é um [monolito modular](decisoes/0003-monolito-modular.md).
+
+## Componentes em execução
 
 ```mermaid
-flowchart LR
-  Browser[Navegador] --> Web[Vite e React]
-  Web -->|mesma origem e sessão| API[Spring Boot]
-  API --> DB[(PostgreSQL e PostGIS)]
-  API -->|somente leitura| Graph[(Grafo GraphHopper)]
+flowchart TB
+  Browser["Navegador<br/>React"] -->|HTTPS e WebSocket| Caddy
+  subgraph VM["VM Azure ARM64: 2 vCPUs e 8 GiB"]
+    Caddy["Caddy<br/>HTTPS, web estática e proxy"]
+    Caddy --> API1["API 1<br/>Spring Boot e GraphHopper"]
+    Caddy --> API2["API 2<br/>Spring Boot e GraphHopper"]
+    API1 --> DB[(PostgreSQL e PostGIS)]
+    API2 --> DB
+    API1 -->|leitura| Graph["Arquivos do grafo<br/>volume imutável por hash"]
+    API2 -->|leitura| Graph
+    Simulator["Simulador Java<br/>120 entregadores e 40 lojas"] -->|HTTP interno| API1
+  end
 ```
 
-O Compose local prepara o grafo em um processo separado, inicia o banco e aguarda PostGIS antes
-de iniciar a API e disponibilizar a web. A readiness inclui o banco e o grafo carregado com uma
-rota de aquecimento aprovada. A liveness informa a saúde do processo sem depender desses dados.
-Os health checks não expõem caminhos do grafo ou detalhes internos do banco.
+Somente o Caddy publica portas de aplicação. As duas APIs compartilham banco, sessões e
+arquivos de rotas; cada instância executa seu próprio GraphHopper embutido. Um importador
+temporário prepara e aquece o grafo antes da ativação. A readiness exige banco e roteamento
+prontos; a liveness acompanha o processo. O simulador usa sessões por ator e as ações HTTP
+da aplicação, sem acessar o banco.
 
-## Evolução prevista
+O ambiente local usa uma API e Vite; o Compose de cluster reproduz duas APIs e o proxy.
+Os comandos ficam no [README](../README.md), no [guia de desenvolvimento](desenvolvimento.md)
+e no [guia de publicação](deploy.md).
 
-Os módulos `orders`, `couriers`, `dispatch` e `routing` contêm os primeiros contratos do domínio.
-Entidades e escrita transacional de pedidos ficam em `orders.internal`; o teste Modulith
-verifica as fronteiras. Os demais módulos serão introduzidos conforme seus comportamentos
-existirem. O [guia de domínio](dominio.md) descreve estados, esquema e invariantes.
+## Limites dos módulos
 
-As decisões que orientam essa evolução são:
+Os pacotes sob `dev.bora` expõem contratos públicos e mantêm implementações em `internal`.
+O teste `BoraApplicationIT` verifica as fronteiras com Spring Modulith. Os módulos continuam
+no mesmo processo e podem participar de uma transação PostgreSQL.
 
-- Garantir exclusividade de ofertas e entregas com restrições e transações no PostgreSQL.
-- Manter as posições persistidas como fonte compartilhada, com sequência ou instante de coleta
-  para rejeitar atualizações antigas entre instâncias.
-- Usar notificações do banco como aviso de mudança e recuperar o estado atual ao reconectar.
-- Distinguir o cenário público simulado dos dados e ações pertencentes a cada visitante.
-- Autorizar cada pedido e assinatura WebSocket conforme o acesso ao recurso.
-- Permitir atualização gradual com migrações compatíveis e reconexão automática do tempo real.
+| Módulo                    | Responsabilidade                                                     |
+| ------------------------- | -------------------------------------------------------------------- |
+| `identity` e `demo`       | Sessões, papéis, contexto privado e limites compartilhados de uso.   |
+| `stores` e `orders`       | Lojas, pedidos, estados, histórico e idempotência.                   |
+| `couriers`                | Disponibilidade, recepção e persistência de posições em lote.        |
+| `dispatch`                | Busca de candidatos, reservas, ofertas, vencimento e redistribuição. |
+| `fulfillment`             | Progresso, coleta, confirmação da entrega e liberação do entregador. |
+| `routing`                 | Encaixe nas vias, geometria, distância e tempo de rota.              |
+| `realtime` e `operations` | Snapshots autorizados, WebSocket e indicadores da operação.          |
 
-Na implantação atual, duas APIs compartilham uma VM e um banco. Essa configuração permite
-exercitar concorrência e atualizações graduais, mas a VM continua sendo um ponto único de falha.
-Consumo de memória, latência, fluidez do mapa e comportamento durante atualizações serão medidos
-com os cenários e as condições de teste registrados na documentação.
+`shared` reúne erros comuns, e `web` configura o contrato OpenAPI. O contrato exportado da API
+é comparado no CI com o documento versionado e com os tipos TypeScript gerados.
 
-## Interface e mapa
+## Como uma oferta é decidida
 
-A página pública é preparada em HTML estático no build e hidratada por React. A abertura usa
-uma imagem real Positron do OpenFreeMap, com data e metadados geográficos associados. Um
-Canvas 2D desenha os entregadores simulados recebidos por STOMP ou snapshot HTTP antes de
-qualquer exploração. A projeção Mercator acompanha o recorte responsivo da imagem.
+O PostgreSQL guarda estados, prazos e próxima tentativa. Cada tentativa bloqueia um pedido
+com `FOR UPDATE SKIP LOCKED`. PostGIS pré-seleciona até oito entregadores disponíveis e próximos;
+GraphHopper calcula o percurso até a loja e o despacho ordena esses candidatos pela duração.
+A reserva revalida disponibilidade e geração da posição antes de escolher um único entregador.
 
-**Explorar mapa** carrega MapLibre GL JS 6.15, worker e CSS e abre a navegação interativa na
-região visível. A imagem tem nome com hash e preload no HTML; seus metadados são compilados
-junto da interface. O navegador interpola posições e respeita visibilidade, movimento reduzido
-e pausa visual nos dois modos. Dados de visitantes permanecem sujeitos ao contexto e às
-regras de autorização da API.
+Oferta, reserva e evento são gravados na mesma transação. Índices únicos parciais impedem duas
+ofertas pendentes para o mesmo pedido ou entregador e duas entregas ativas para um entregador.
+O vencimento de 30 segundos fica no banco e pode ser recuperado por outra instância após reinício.
+Coleta, cancelamento e redistribuição seguem a mesma ordem de bloqueio dos recursos.
 
-A linha do tempo deriva os marcos dos estados e eventos persistidos. Redistribuição reinicia a
-progressão da tentativa, e cancelamento preserva a distinção entre etapa interrompida e etapas
-não realizadas. O [guia de mapa e interface](mapa-e-interface.md) descreve o comportamento,
-acessibilidade e limites das medições.
+As posições chegam a um buffer limitado e são gravadas em lote. HTTP 202 confirma recepção;
+a posição passa a ser compartilhada após persistir. Timestamp e `position_epoch` impedem que
+amostras antigas de uma etapa sobrescrevam o estado atual. Esse buffer em memória não é uma
+fila durável. Veja [domínio](dominio.md), [entregadores e posições](entregadores-e-posicoes.md)
+e a [decisão de rotas e reservas](decisoes/0004-rotas-e-reservas.md).
 
-A área da loja e o rastreio público são carregados separadamente da página inicial. A lista
-de pedidos só é consultada quando o visitante a abre. Busca por código e filtros são aplicados
-na API sobre os pedidos autorizados. Cada resposta usa uma leitura consistente para contagem
-e itens; um limite de criação fixa a inclusão de novos pedidos durante a navegação. Isso não
-congela mudanças de estado no banco. A interface mantém a lista apresentada até uma atualização
-explícita, enquanto o detalhe selecionado recebe seus próprios eventos.
-
-O link de rastreio usa um código aleatório de 192 bits e concede apenas os dados daquela
-entrega. O snapshot público omite identidades, ofertas e código de confirmação. Posições
-precisam ser recentes e posteriores à atribuição; pedidos privados deixam de ser rastreáveis
-quando seu contexto expira. O cálculo de rota tem cache limitado e prazo explícito, separado
-da consulta que confere o estado e o acesso. Uma estimativa indica o próximo marco e informa
-quando foi calculada; não representa trânsito em tempo real.
-
-## Publicação
-
-O ambiente de produção serve a web compilada pelo Caddy. Somente o proxy publica portas na VM;
-as APIs compartilham uma rede com ele e outra com o banco, que não possui porta pública.
+## Como as telas recebem mudanças
 
 ```mermaid
-flowchart LR
-  Browser[Navegador] -->|HTTPS| Caddy[Caddy e arquivos estáticos]
-  Caddy --> API1[API 1]
-  Caddy --> API2[API 2]
-  API1 --> DB[(PostgreSQL e PostGIS)]
-  API2 --> DB
-  Import[Preparação única do grafo] --> Graph[(Grafos imutáveis por hash)]
-  API1 -->|somente leitura| Graph
-  API2 -->|somente leitura| Graph
+sequenceDiagram
+  participant Write as API que grava
+  participant DB as PostgreSQL
+  participant Read as APIs com LISTEN
+  participant Browser as Navegador
+  Write->>DB: Estado e evento na mesma transação
+  DB-->>Write: Commit
+  DB-->>Read: NOTIFY com chave curta
+  Read->>DB: Validar sessão e consultar recurso
+  DB-->>Read: Estado autorizado atual
+  Read-->>Browser: Snapshot por STOMP / WebSocket
+  opt Reconexão ou aviso perdido
+    Browser->>Read: Consulta HTTP do estado atual
+    Read->>DB: Revalidar acesso e ler estado
+    DB-->>Read: Snapshot
+    Read-->>Browser: Estado atualizado
+  end
 ```
 
-A troca de APIs acontece uma instância por vez, com drenagem e readiness. A web usa ativação
-atômica de arquivos e preserva assets anteriores. O fluxo e os limites dessa recuperação estão
-no [guia de publicação](deploy.md) e na [decisão de publicação gradual](decisoes/0002-publicacao-gradual.md).
+Cada API escuta o PostgreSQL por uma conexão dedicada. Os avisos só chegam depois do commit;
+eles aceleram a leitura e não constituem um histórico de mensagens. Reconciliação periódica,
+reconexão e snapshots HTTP recuperam alterações perdidas. O mapa envia apenas a área visível,
+com no máximo um frame por segundo. Veja [tempo real](tempo-real.md) e a
+[decisão de recuperação por snapshots](decisoes/0005-tempo-real-e-snapshots.md).
 
-O importador prepara e aquece o grafo antes de mudar o tráfego. Publica um diretório por hash,
-mantendo versões anteriores para rollback. As APIs usam GraphHopper embutido e compartilham
-esse volume somente para leitura; o cálculo não chama um serviço externo.
-O [guia de roteamento](roteamento.md) descreve perfil, dados, ETA e medições.
+A sessão fica no PostgreSQL, identificada por cookie HttpOnly. Escritas e conexão STOMP exigem
+CSRF. Trocar de papel preserva o contexto do visitante e renova a sessão; sair revoga o contexto.
+O servidor autoriza recursos também no WebSocket. O cenário simulado é público; pedidos de
+visitantes ficam no próprio contexto, com rastreio limitado por um código aleatório separado
+da confirmação da entrega. Veja [identidade e pedidos](identidade-e-pedidos.md) e a
+[decisão de sessões e contextos](decisoes/0006-sessoes-e-contextos.md).
 
-## Identidade e pedidos
+A página inicial combina HTML estático hidratado e prévia cartográfica com Canvas. A exploração
+carrega MapLibre sob demanda. Detalhes de projeção, interpolação, acessibilidade e medição ficam
+em [mapa e interface](mapa-e-interface.md) e [qualidade web](qualidade-web.md).
 
-As duas APIs compartilham sessões Spring Session JDBC. O navegador recebe um cookie HttpOnly;
-ações exigem o token CSRF obtido da mesma sessão. Trocar de papel preserva o contexto privado
-do visitante, com rotação do identificador da sessão e do token. Sair revoga o contexto.
+## Publicação e limites
 
-`identity` cuida da identidade; `demo`, dos limites compartilhados com Bucket4j e PostgreSQL;
-`stores`, das consultas de loja; `orders`, da criação e do ciclo do pedido. `shared` contém
-erros HTTP comuns, sem depender dos módulos do domínio. Os controladores validam o papel e os
-serviços voltam a conferir propriedade e contexto. A operação de visitante não recebe pedidos
-particulares de outros contextos.
+A publicação substitui uma API por vez com drenagem e readiness. Um marcador bloqueia novas
+ofertas enquanto as versões estão misturadas. HTML e CSP são ativados por trocas atômicas de
+arquivos, com retenção dos assets anteriores. Alterações estruturais do Caddy ainda exigem
+reload e podem encerrar conexões TCP; sockets da API substituída precisam reconectar.
+O [guia de publicação](deploy.md) e o [ADR de publicação gradual](decisoes/0002-publicacao-gradual.md)
+descrevem o fluxo e a recuperação.
 
-Criar um pedido adquire um lock no contexto antes de conferir o limite de cinco pedidos ativos.
-Pedido, evento e registro de idempotência são persistidos na mesma transação. A chave é
-compartilhada pelas APIs e uma repetição válida preserva a resposta original. O limitador usa
-uma conexão própria, antes de abrir essa transação, para evitar espera circular no pool.
+A VM e o banco são pontos únicos de falha. A hospedagem usa créditos estudantis temporários
+e a VM tem créditos de CPU. A demonstração mantém 120 entregadores simulados. Os ensaios
+locais com 150 e 500 entregadores, em quatro CPUs lógicas e após aquecimento, não comprovam
+essa capacidade na VM Azure. O degrau a frio reprovado permanece documentado em
+[carga e concorrência](carga.md).
 
-O contrato OpenAPI vem dos controladores reais. Um teste exporta e compara o documento com
-o snapshot versionado; o CI também confere os tipos TypeScript derivados desse documento.
-Consulte [identidade e pedidos](identidade-e-pedidos.md).
-
-## Entregadores e execução da entrega
-
-`couriers` controla disponibilidade e recebe posições em um buffer limitado. A gravação em
-lote no PostgreSQL só substitui uma posição por outra coletada depois dela. O banco é a fonte
-compartilhada entre as APIs; uma resposta de recebimento ainda precisa ser confirmada pela
-consulta da posição persistida.
-
-`fulfillment` depende das interfaces públicas de `orders` e `couriers`. Coordena chegada por
-proximidade, trilha, coleta, código de confirmação e liberação do entregador. Um evento síncrono
-de término mantém pedido, evento e liberação na mesma transação. A notificação de posições
-acontece depois da gravação do lote; uma reconciliação periódica recupera progresso pelo banco
-se essa notificação for perdida. Consulte [entregadores e posições](entregadores-e-posicoes.md).
-
-O módulo também chama a limpeza de reservas de `dispatch` antes de liberar o entregador
-atribuído. Cancelamento, expiração, aceite e redistribuição usam a mesma ordem de bloqueio:
-pedido, oferta e entregador. Cada tentativa de despacho ou expiração trata somente um pedido
-por transação, evitando manter reservas de vários entregadores enquanto aguarda outro pedido.
-
-## Despacho e ofertas
-
-`dispatch` busca pedidos vencidos para tentativa com `FOR UPDATE SKIP LOCKED`. Para cada pedido,
-seleciona até oito entregadores próximos pelo índice espacial, calcula rotas e ordena pela duração
-simulada exata. O ETA em segundos é arredondado somente para exposição e armazenamento. A
-reserva condicional revalida disponibilidade, posição e geração da posição antes de bloquear um
-único candidato. Ofertas anteriores aceitas, recusadas ou expiradas para esse pedido excluem o
-mesmo entregador das próximas tentativas.
-
-A oferta dura 30 segundos. Aceite e recusa verificam o relógio depois dos bloqueios; uma decisão
-tardia confirma a expiração e libera a reserva antes de responder com conflito. Prazo, estado,
-tentativa seguinte e eventos ficam no PostgreSQL, compartilhados pelas duas APIs. O reinício de
-um processo não depende de temporizadores em memória para recuperar ofertas vencidas.
-
-A criação de novas ofertas exige um marcador de ativação com o SHA completo da própria API
-e o proxy no modo `both`. O deploy fecha esse marcador antes de substituir processos e o abre
-somente depois de validar APIs e web da mesma versão. A limpeza de reservas continua ativa
-durante a atualização e após recuperar a versão anterior. Consulte o
-[guia de publicação](deploy.md).
-
-O cliente recebe ofertas e mudanças de pedidos por STOMP, com sessão compartilhada e
-autorização do recurso em cada assinatura. As duas APIs recebem avisos transacionais do
-PostgreSQL e consultam o estado persistido. Reconexão e reconciliação recuperam mudanças
-perdidas; a consulta HTTP periódica continua disponível durante a desconexão. Consulte
-[tempo real](tempo-real.md).
-
-O horário do servidor acompanha a oferta para que a contagem não dependa do ajuste do relógio
-do dispositivo. As transições continuam validadas no servidor. Consulte os fluxos e limites em
-[entregadores e posições](entregadores-e-posicoes.md).
-
-## Simulação
-
-O simulador usa uma thread virtual por entregador e por loja, com um único cliente HTTP e
-cookies isolados por ator. Identidades estáveis permitem retomar entregas após reinício;
-disponibilidade, posições, ofertas, coleta e entrega usam as APIs normais. A preparação das
-identidades exige uma chave interna, sessão e CSRF. O proxy público bloqueia essas rotas.
-
-Pedidos públicos das lojas simuladas dispensam confirmação. Pedidos de visitantes preservam
-contexto, limite de cinco ativos e código; o despacho não os oferece a entregadores simulados.
-A semente controla os sorteios, e movimento e duração usam o mesmo fator `SIM_SPEED` do
-roteamento. Consulte [simulação e qualificação](simulacao.md).
+O ETA usa velocidades das vias e o fator de simulação, sem trânsito em tempo real; a escolha
+é a melhor entre os candidatos pré-selecionados. O mapa depende de serviços externos para o
+estilo e os tiles da exploração. Consulte [roteamento](roteamento.md), [simulação](simulacao.md)
+e [segurança e verificações](seguranca.md) para os limites e as evidências de cada área.

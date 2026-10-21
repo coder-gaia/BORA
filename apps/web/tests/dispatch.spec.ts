@@ -117,7 +117,9 @@ test('aceita uma oferta privada e conclui a entrega após conferir o código', a
   );
   try {
     await tracking.goto(`/rastreio/${order.publicCode}`);
-    await expect(tracking.getByRole('status')).toHaveText('Entregador a caminho da loja');
+    await expect(tracking.locator('#tracking-content').getByRole('status')).toHaveText(
+      'Entregador a caminho da loja',
+    );
     await expect(tracking.getByText('Código de confirmação', { exact: true })).toHaveCount(0);
     const beforeMovement = (await (
       await trackingContext.request.get(`/api/v1/tracking/${order.publicCode}`)
@@ -170,7 +172,7 @@ test('aceita uma oferta privada e conclui a entrega após conferir o código', a
       page.getByText('Entrega concluída. Você está disponível novamente.', { exact: true }),
     ).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Entrega em andamento' })).toHaveCount(0);
-    await expect(tracking.getByRole('status')).toHaveText('Entregue');
+    await expect(tracking.locator('#tracking-content').getByRole('status')).toHaveText('Entregue');
     const publicBody = await tracking.locator('main').textContent();
     expect(publicBody).not.toContain(order.confirmationCode!);
     await testInfo.attach('public-tracking-motion.json', {
