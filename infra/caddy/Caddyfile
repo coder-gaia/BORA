@@ -32,12 +32,18 @@
 
 	encode zstd gzip
 
+	vars content_security_policy {file./etc/caddy/content-security-policy}
+	map {http.vars.content_security_policy} {security_policy} {
+		"" "default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'"
+		default {http.vars.content_security_policy}
+	}
+
 	header {
 		-Server
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
-		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https://tiles.openfreemap.org; connect-src 'self' https://tiles.openfreemap.org; worker-src 'self' blob:"
+		Content-Security-Policy "{security_policy}"
 	}
 
 	@simulator_internal path /api/v1/simulator /api/v1/simulator/* /api/v1/auth/simulator

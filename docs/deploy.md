@@ -114,7 +114,7 @@ compilados na interface apontam para essa versão da imagem. Publicar ou restaur
 do bundle que contém seus limites geográficos evita desalinhamento de pontos após atualizações.
 
 **Explorar mapa** carrega estilo, tiles e recursos de `https://tiles.openfreemap.org`. O
-`Content-Security-Policy` de `infra/caddy/Caddyfile` permite somente esse host externo em
+`Content-Security-Policy` de `infra/caddy/content-security-policy` permite somente esse host externo em
 `connect-src` e `img-src`, além das origens e tipos já previstos para a aplicação. O worker do
 MapLibre e as fontes WOFF2 da interface são servidos pela própria origem. A política é enviada
 também na resposta do arquivo do worker, pois ele faz requisições de recursos do mapa.
@@ -132,8 +132,15 @@ precisa continuar servindo arquivos reais, com tipo MIME correto; um asset ausen
 
 Conferir o mapa em uma origem com os headers reais de produção e observar violações de CSP no
 console. O ambiente Vite e o Caddy do cluster local não aplicam essa política, portanto um teste
-funcional somente nesses ambientes não comprova a configuração de produção. Alterar a CSP muda
-o Caddyfile e segue o caminho de reload já descrito neste guia.
+funcional somente nesses ambientes não comprova a configuração de produção.
+
+A CSP fica em uma linha ASCII de até 16.384 bytes no bundle. O deploy valida e publica
+`/opt/bora/config/content-security-policy` por rename atômico, antes de comparar o Caddyfile.
+O proxy lê o arquivo uma vez por requisição; uma mudança somente da política dispensa reload,
+inclusive no rollback. Se a leitura falhar ou o arquivo estiver vazio, o header usa uma política
+restritiva com `default-src 'none'`. A aplicação pode deixar de carregar recursos nessa condição;
+repor o arquivo válido restaura os headers sem reiniciar o proxy. Bundles antigos continuam
+usando a política literal do seu Caddyfile.
 
 Consulte [mapa e interface](mapa-e-interface.md) para comportamento, controles e medições.
 
@@ -195,10 +202,22 @@ antigo. Isso permite que suas últimas posições expirem e evita que a versão 
 um entregador simulado para um pedido privado. A parada é registrada em arquivo restrito
 fora do diretório público, inclusive quando uma tentativa é interrompida.
 
-O Caddyfile só é substituído quando seu conteúdo muda. Essa mudança real exige reload e pode
-encerrar conexões HTTP ociosas; a recuperação para um bundle com configuração antiga também
-pode usar esse caminho. Preservar o processo não elimina esse efeito. A continuidade medida
-na atualização de aplicação pressupõe a mesma configuração de proxy.
+O Caddyfile só é substituído quando seu conteúdo muda. Mudanças estruturais ainda exigem reload;
+a recuperação para um bundle com configuração antiga também pode usar esse caminho.
+O Caddy 2.11.7 pode fechar conexões HTTP/1.1 sem resposta durante o reload, inclusive conexões
+novas cujos headers ainda não terminaram de chegar. O problema está documentado na
+[issue 8233 do Caddy](https://github.com/caddyserver/caddy/issues/8233), aberta em 16/10/2026 e
+confirmada por um mantenedor em 17/10/2026. Preservar o processo ou aumentar `grace_period`
+não elimina essa condição. A continuidade medida em atualizações da aplicação e da CSP não
+qualifica mudanças estruturais do proxy.
+
+O ensaio público do M09 permanece reprovado no critério estrito: 12.268 sucessos em 12.271
+requisições, com três `UND_ERR_SOCKET` durante a troca de configuração. A reprodução local
+do M13 usa TCP diretamente, sem retries: uma conexão com headers parciais antes do reload
+é encerrada sem receber bytes HTTP; novas conexões recebem a configuração atualizada.
+Isso comprova a limitação local da versão utilizada, sem atribuir retroativamente cada falha
+do M09 ao mesmo estado TCP, que não foi capturado naquele ensaio. A mudança do M13 retira a
+CSP desse caminho; a primeira instalação do novo Caddyfile ainda exige um reload estrutural.
 
 Antes de substituir o Caddyfile, o deploy registra `.proxy-config-pending` fora do diretório
 público. A pendência só é removida após aplicar a configuração ou confirmar que o próximo
@@ -284,6 +303,40 @@ Por padrão, as tags válidas do cenário usam a mesma imagem de origem; a prova
 a troca de processos. Quando as variáveis de versão anterior são fornecidas, o mesmo ensaio
 troca as imagens efetivas. A compatibilidade entre versões diferentes também depende das migrações
 aditivas e da validação da atualização real.
+
+A publicação de configuração tem dois ensaios adicionais:
+
+```sh
+bash infra/deploy/proxy-config.test.sh
+node scripts/check-caddy-policy.mjs --report /tmp/bora-caddy-policy.json
+```
+
+O primeiro verifica a publicação atômica, rejeição de política inválida, rollback, compatibilidade
+legada e retomada de uma alteração estrutural interrompida antes do reload. Ele também integra
+o launcher completo de deploy. O segundo usa o Caddyfile e a imagem imutável da produção em um
+container exclusivo de 96 MiB, sem banco, APIs ou volumes persistentes; no Windows, acrescentar
+`--docker-context desktop-linux`. Ele registra separadamente o diagnóstico de reload estrutural
+e a qualificação de 20 trocas de CSP com requisições persistentes sem retries, conferindo a
+política antiga ou nova inteira, a volta à política original e a preservação do processo e da
+configuração ativa. A saída aprovada da política atômica não transforma o diagnóstico estrutural
+em sucesso: conferir `structuralReload.qualification` no JSON. O script remove somente seu
+container e diretório temporário ao terminar.
+
+Em 21/10/2026, o [ensaio isolado de CSP](benchmarks/m13-caddy-policy.json) completou 20 trocas
+atômicas e a restauração da política original, com 609 requisições bem-sucedidas e zero falhas,
+sem retries. A configuração ativa e o container permaneceram os mesmos. O controle negativo
+de reload estrutural reprovou nas três tentativas: o servidor encerrou a conexão com headers
+parciais sem enviar bytes HTTP. A primeira migração do Caddyfile no M13 continua sujeita a
+essa limitação.
+
+Na [integração local do M13](benchmarks/m13-deploy-continuity.json), com imagens M12 e M13
+distintas, o cliente Node completou 17.515 requisições em 300 segundos, sem falhas de HTTP,
+conexão ou identidade, e outras 3.289 consultas curl receberam HTTP 200. O ensaio também
+aprovou a publicação e restauração real da CSP, a recuperação automática e manual, a
+preservação do Caddy e do banco e a expiração de uma oferta pelas APIs anteriores após o
+rollback. A janela contínua começou depois dos testes de compatibilidade estrutural do proxy;
+não houve reload durante as trocas normais de aplicação e seus rollbacks. Esses números
+descrevem HTTP local em amd64; não qualificam DNS, TLS ou disponibilidade da VM pública.
 
 Na validação local de 18/10/2026 em amd64, com imagens anteriores e novas distintas, o cliente
 Node completou 17.581 requisições em 300 segundos, sem falhas de HTTP, conexão ou identidade.

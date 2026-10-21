@@ -1,0 +1,87 @@
+{
+  "startedAt": "2026-10-21T14:37:35.114150+00:00",
+  "finishedAt": "2026-10-21T14:46:26.378601+00:00",
+  "exitCode": 0,
+  "conditions": {
+    "environment": "Linux/amd64 local no Docker Desktop",
+    "transport": "HTTP/1.1 em rede Docker isolada",
+    "apiInstances": 2,
+    "previousVersion": "M12",
+    "currentVersion": "M13",
+    "previousApiAndWebImagesDistinct": true,
+    "continuousProbeStartsAfterStructuralProxyCompatibilityChecks": true,
+    "productionVmMeasured": false,
+    "dnsAndTlsMeasured": false
+  },
+  "imageIds": {
+    "api": "sha256:e56e1fc3c2b9d16739db2f293dd5778cea5d1bbf53eea3478b291d6925e94aef",
+    "web": "sha256:f3a6758cc5b82f1df55d3b1bc1680d8cf939cbc8fa093a3412fd638bb9baf017",
+    "previousApi": "sha256:fb4856e1ebb0898f0fffda4bf22cc56a65529acdb18d8e864bb46be2926b82a2",
+    "previousWeb": "sha256:15fbdda1474a2c18b16b6a9ad0fb20472f9f5c4544f987aad0f1e9b98f3a1db4",
+    "database": "sha256:9d1e762651ed91486ccbff0f4c944c7bd585806baa240d77fb53900bc73379f3",
+    "simulator": "sha256:c20ec1dd572860a18984b8e095481b04a4c20d76bc2ad516a27e45df715cbeee"
+  },
+  "continuousProbe": {
+    "startedAt": "2026-10-21T14:41:20.172Z",
+    "finishedAt": "2026-10-21T14:46:20.170Z",
+    "requestedDurationSeconds": 300,
+    "elapsedMs": 300018.68,
+    "intervalMs": 50,
+    "timeoutMs": 5000,
+    "interrupted": false,
+    "sessionChecked": true,
+    "totals": {
+      "requests": 17515,
+      "successes": 17515,
+      "failures": 0,
+      "p95LatencyMs": 26.95
+    },
+    "endpoints": [
+      {
+        "path": "/",
+        "requests": 5895,
+        "successes": 5895,
+        "failures": 0,
+        "p95LatencyMs": 9.61
+      },
+      {
+        "path": "/actuator/health/readiness",
+        "requests": 5895,
+        "successes": 5895,
+        "failures": 0,
+        "p95LatencyMs": 14.58
+      },
+      {
+        "path": "/api/v1/auth/me",
+        "requests": 5725,
+        "successes": 5725,
+        "failures": 0,
+        "p95LatencyMs": 40.01
+      }
+    ]
+  },
+  "additionalCurl": {
+    "requests": 3289,
+    "successes": 3289,
+    "failures": 0,
+    "expectedStatus": 200
+  },
+  "integrationAssertions": {
+    "sameIdentityAcrossInstancesAndRollbacks": true,
+    "persistentClientRetries": 0,
+    "routineUpgradeAndRollbackReloads": 0,
+    "caddyContainerPreserved": true,
+    "databaseContainerAndMigrationsPreserved": true,
+    "atomicCspPublishAndRestoreWithoutReload": true,
+    "automaticAndManualRecovery": true,
+    "orphanSimulatorAbsent": true,
+    "previousApisExpirePersistedOfferWithOriginalDeadline": true
+  },
+  "qualification": "PASS_LOCAL_ROUTINE_UPGRADE_AND_ROLLBACK",
+  "limitations": [
+    "Reloads estruturais do proxy têm um controle negativo separado. A primeira migração do Caddyfile do M13 ainda exige um reload estrutural.",
+    "Estas observações locais não qualificam DNS público, TLS, disponibilidade do provedor ou capacidade da VM de produção."
+  ],
+  "originalProbeSha256": "b6857c1a31955e2bf82f2bf75388196f1eaa6b12f0cc255fc8c1c7d660229e3b",
+  "originalInputsSha256": "ad088fcecdac50f006005577442f36492c81dd11ebda1419bf02a96981a3032a"
+}

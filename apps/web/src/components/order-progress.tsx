@@ -42,6 +42,7 @@ export function OrderProgress({
   publicView?: boolean;
 }) {
   const id = useId();
+  const Heading = publicView ? 'h2' : 'h4';
   const history = useRef<HTMLDetailsElement>(null);
   const [inspected, inspect] = useState<DeliveryStageKey | null>(null);
   const model = deliveryProgress(order);
@@ -66,7 +67,9 @@ export function OrderProgress({
       <div className="delivery-progress-heading">
         <div>
           <p className="delivery-progress-eyebrow">Acompanhe o caminho</p>
-          <h4 id={`${id}-title`}>Linha do tempo</h4>
+          <Heading className="delivery-progress-title" id={`${id}-title`}>
+            Linha do tempo
+          </Heading>
         </div>
         <span
           className={`delivery-progress-summary ${order.status === 'CANCELED' ? 'is-canceled' : ''}`}

@@ -1,0 +1,86 @@
+{
+  "qualified": false,
+  "startedAt": "2026-10-21T14:25:08.213644884Z",
+  "sourceSha256": "1d92605487aa95507c5a4a02741ab1293d5c3f922b13477a0745089601ac3507",
+  "gatlingVersion": "3.16.0",
+  "javaVersion": "25.0.4.1+1-LTS",
+  "architecture": "amd64",
+  "availableProcessors": 4,
+  "maxHeapBytes": 1073741824,
+  "databaseMemoryBytes": 536870912,
+  "databaseCpuQuota": 1,
+  "routingManifest": "routing/sp-fixture-manifest.json",
+  "datasetSha256": "edbc4d0b53d21b6b4febe82f4b22b3610f3025398785cc7b44e9c2bfc06e0cbf",
+  "couriers": 500,
+  "positionsPerSecond": 250,
+  "ordersPerSecond": 2,
+  "warmupSeconds": 65,
+  "warmupRampSeconds": 20,
+  "warmupMethod": "GPS de zero à taxa alvo em 20 s, seguido de 45 s na taxa alvo; pedidos a partir de 5 s. Mesma sequência de atores até o fim da medição.",
+  "measurementSeconds": 60,
+  "positionPattern": "Uma posição por entregador a cada 2 s, na Paulista; 20 lojas públicas co-localizadas. Sem aceitar ofertas ou concluir entregas.",
+  "authentication": "Sessões Spring Session JDBC preparadas no banco descartável; CSRF obtido por HTTP; filtros, persistência e Bucket4j de produção sem bypass.",
+  "observerMaxGapMillis": 589,
+  "invariantObservations": 269,
+  "invariantMaxima": {
+    "multiple_pending_per_order": 0,
+    "multiple_pending_per_courier": 0,
+    "multiple_active_orders": 0,
+    "offered_without_pending": 0,
+    "invalid_pending_state": 0,
+    "invalid_assigned_state": 0,
+    "private_to_simulator": 0,
+    "invalid_deadlines": 0
+  },
+  "gatlingExitCode": 0,
+  "buffer": {
+    "pendingCouriers": 0,
+    "bufferedPoints": 0,
+    "oldestQueuedAt": "2026-10-21T14:27:32.733025747Z",
+    "flushFailures": 0,
+    "maxPersistLagMillis": 358,
+    "lastFlushAt": "2026-10-21T14:27:31.557179141Z"
+  },
+  "measuredOrders": 120,
+  "ordersWithFirstOffer": 120,
+  "firstOfferP95Millis": 496.357,
+  "persistedFreshCouriers": 500,
+  "couriersWithExactLatestPosition": 495,
+  "gatlingStatistics": {
+    "GPS aquecimento": {
+      "p50Millis": 6,
+      "p95Millis": 14,
+      "requests": 13750,
+      "p99Millis": 31,
+      "maxMillis": 368,
+      "failures": 0
+    },
+    "Pedido aquecimento": {
+      "p50Millis": 23,
+      "p95Millis": 51,
+      "requests": 120,
+      "p99Millis": 486,
+      "maxMillis": 970,
+      "failures": 0
+    },
+    "GPS medido": {
+      "p50Millis": 5,
+      "p95Millis": 30,
+      "requests": 15000,
+      "p99Millis": 273,
+      "maxMillis": 1108,
+      "failures": 0
+    },
+    "Pedido medido": {
+      "p50Millis": 17,
+      "p95Millis": 64,
+      "requests": 120,
+      "p99Millis": 529,
+      "maxMillis": 859,
+      "failures": 0
+    }
+  },
+  "failureType": "org.opentest4j.AssertionFailedError",
+  "failureMessage": "\nexpected: 500\n but was: 495",
+  "finishedAt": "2026-10-21T14:27:32.881659423Z"
+}

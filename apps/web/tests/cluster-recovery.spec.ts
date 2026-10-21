@@ -54,7 +54,7 @@ test('reconecta nas duas instâncias sem perder sessão ou snapshot', async ({
   test.skip(process.env.BORA_TEST_CLUSTER !== 'true', 'Ensaio explícito do cluster Docker local.');
   test.setTimeout(180_000);
   // Validate before the first stop and before entering cleanup that restarts services.
-  expect(['bora-cluster', 'bora-sim-soak']).toContain(project);
+  expect(['bora-cluster', 'bora-sim-soak', 'bora-m13-e2e']).toContain(project);
   expect(['localhost', '127.0.0.1']).toContain(new URL(baseURL!).hostname);
   const sockets: { closed: boolean; connected: boolean; private: boolean }[] = [];
   const errors: string[] = [];

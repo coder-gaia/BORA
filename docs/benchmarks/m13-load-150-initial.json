@@ -1,0 +1,82 @@
+{
+  "qualified": true,
+  "startedAt": "2026-10-21T13:56:48.094724358Z",
+  "sourceSha256": "1a25b6fdc7a1fe2301ceca8ecd3e30c812e0dd6130ad1b933dc487c8f01eb265",
+  "gatlingVersion": "3.16.0",
+  "javaVersion": "25.0.4.1+1-LTS",
+  "architecture": "amd64",
+  "availableProcessors": 4,
+  "maxHeapBytes": 1073741824,
+  "databaseMemoryBytes": 536870912,
+  "databaseCpuQuota": 1,
+  "routingManifest": "routing/sp-fixture-manifest.json",
+  "datasetSha256": "edbc4d0b53d21b6b4febe82f4b22b3610f3025398785cc7b44e9c2bfc06e0cbf",
+  "couriers": 150,
+  "positionsPerSecond": 75,
+  "ordersPerSecond": 1,
+  "warmupSeconds": 65,
+  "measurementSeconds": 60,
+  "positionPattern": "Uma posição por entregador a cada 2 s, na Paulista; 20 lojas públicas co-localizadas. Sem aceitar ofertas ou concluir entregas.",
+  "authentication": "Sessões Spring Session JDBC preparadas no banco descartável; CSRF obtido por HTTP; filtros, persistência e Bucket4j de produção sem bypass.",
+  "observerMaxGapMillis": 634,
+  "invariantObservations": 280,
+  "invariantMaxima": {
+    "multiple_pending_per_order": 0,
+    "multiple_pending_per_courier": 0,
+    "multiple_active_orders": 0,
+    "offered_without_pending": 0,
+    "invalid_pending_state": 0,
+    "invalid_assigned_state": 0,
+    "private_to_simulator": 0,
+    "invalid_deadlines": 0
+  },
+  "gatlingExitCode": 0,
+  "buffer": {
+    "pendingCouriers": 0,
+    "bufferedPoints": 0,
+    "oldestQueuedAt": "2026-10-21T13:59:12.973544202Z",
+    "flushFailures": 0,
+    "maxPersistLagMillis": 389,
+    "lastFlushAt": "2026-10-21T13:59:11.600202906Z"
+  },
+  "measuredOrders": 60,
+  "ordersWithFirstOffer": 60,
+  "firstOfferP95Millis": 483.744,
+  "persistedFreshCouriers": 150,
+  "couriersWithExactLatestPosition": 150,
+  "gatlingStatistics": {
+    "GPS aquecimento": {
+      "maxMillis": 1730,
+      "failures": 0,
+      "p50Millis": 10,
+      "p95Millis": 24,
+      "requests": 4875,
+      "p99Millis": 693
+    },
+    "Pedido aquecimento": {
+      "maxMillis": 1300,
+      "failures": 0,
+      "p50Millis": 29,
+      "p95Millis": 63,
+      "requests": 60,
+      "p99Millis": 1300
+    },
+    "GPS medido": {
+      "maxMillis": 64,
+      "failures": 0,
+      "p50Millis": 10,
+      "p95Millis": 14,
+      "requests": 4500,
+      "p99Millis": 19
+    },
+    "Pedido medido": {
+      "maxMillis": 59,
+      "failures": 0,
+      "p50Millis": 25,
+      "p95Millis": 49,
+      "requests": 60,
+      "p99Millis": 59
+    }
+  },
+  "finishedAt": "2026-10-21T13:59:13.206793058Z"
+}

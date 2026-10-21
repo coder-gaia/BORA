@@ -9,6 +9,7 @@ test_root=$(realpath -e "$BORA_TEST_ROOT")
   exit 1
 }
 source_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+bash "$source_root/infra/deploy/proxy-config.test.sh"
 test_id="$(date +%s)-$RANDOM"
 project="bora-script-test-$test_id"
 registry="bora-script-registry-$test_id"
@@ -207,6 +208,39 @@ for marker in invalid missing; do
   fi
 done
 printf '%s\n' both > "$test_root/config/upstream-mode"
+
+# Uma política nova usa o publisher real, sem trocar a configuração ativa do proxy.
+policy_root="$test_root/policy-proxy"
+mkdir -p "$policy_root/infra"
+cp -R "$source_root/infra/compose" "$source_root/infra/caddy" "$policy_root/infra/"
+(
+  # shellcheck source=infra/deploy/common.sh
+  source "$test_root/releases/$old_version/infra/deploy/common.sh"
+  initialize
+  select_bundle "$old_version"
+  original_bundle=$BUNDLE_ROOT
+  original_policy=$(cat "$BUNDLE_ROOT/infra/caddy/content-security-policy")
+  active_config=$(dc exec -T caddy wget --quiet --output-document=- http://127.0.0.1:2019/config/)
+  BUNDLE_ROOT=$policy_root
+  next_policy="$original_policy; upgrade-insecure-requests"
+  printf '%s\n' "$next_policy" > "$BUNDLE_ROOT/infra/caddy/content-security-policy"
+  copy_proxy_config
+  test "$PROXY_CONFIG_CHANGED" = false
+  test ! -e "$BORA_ROOT/.proxy-config-pending"
+  apply_proxy_config
+  response_policy=$(curl --fail --silent --show-error --max-time 5 --head "$BORA_PUBLIC_URL/" \
+    | tr -d '\r' | sed -n 's/^[Cc]ontent-[Ss]ecurity-[Pp]olicy: //p')
+  test "$response_policy" = "$next_policy"
+  test "$(dc exec -T caddy wget --quiet --output-document=- http://127.0.0.1:2019/config/)" = "$active_config"
+  BUNDLE_ROOT=$original_bundle
+  copy_proxy_config
+  test "$PROXY_CONFIG_CHANGED" = false
+  apply_proxy_config
+  response_policy=$(curl --fail --silent --show-error --max-time 5 --head "$BORA_PUBLIC_URL/" \
+    | tr -d '\r' | sed -n 's/^[Cc]ontent-[Ss]ecurity-[Pp]olicy: //p')
+  test "$response_policy" = "$original_policy"
+  test "$(dc exec -T caddy wget --quiet --output-document=- http://127.0.0.1:2019/config/)" = "$active_config"
+)
 
 # A configuração legada usa reload; a volta simula interrupção antes de aplicar o arquivo.
 legacy_root="$test_root/legacy-proxy"

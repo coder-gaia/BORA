@@ -19,8 +19,21 @@
   font-size: 11px;
 }
 
-.workspace-section-heading h3:focus,
-.created-order-heading h4:focus {
+:is(
+    .workspace-section-heading h3,
+    .orders-intro h3,
+    .operations-confirmation h4,
+    .created-order-heading h4
+  ):focus:not(:focus-visible) {
+  outline: none;
+}
+
+:is(
+  .workspace-section-heading h3,
+  .orders-intro h3,
+  .operations-confirmation h4,
+  .created-order-heading h4
+):focus-visible {
   outline: 2px solid var(--foreground);
   outline-offset: 6px;
 }

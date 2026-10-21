@@ -1,7 +1,6 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
 import { operationsVisualFixture } from './operations-visual-fixture';
 
 test.use({ locale: 'pt-BR', timezoneId: 'America/Sao_Paulo', reducedMotion: 'reduce' });
@@ -94,15 +93,7 @@ for (const width of widths)
     expect(origin.protocol).toBe('http:');
     const axePath =
       process.env.BORA_AXE_SCRIPT_PATH ??
-      join(
-        tmpdir(),
-        'bora-m09-preview-4bf1c1e',
-        'tools',
-        'validation',
-        'node_modules',
-        'axe-core',
-        'axe.min.js',
-      );
+      createRequire(import.meta.url).resolve('axe-core/axe.min.js');
     // Visual QA is opt-in, but axe is mandatory when it is enabled. Missing/unreadable
     // sources fail before navigation rather than silently reducing the audit coverage.
     const axeSource = await readFile(axePath, 'utf8');
@@ -129,7 +120,7 @@ for (const width of widths)
     page.on('console', (message) => {
       if (
         message.type() === 'error' &&
-        /hydration|hydrating|Minified React|Content Security Policy|Refused to/i.test(
+        /Cannot update a component|while rendering|hydration|hydrating|Minified React|Content Security Policy|Refused to/i.test(
           message.text(),
         )
       )

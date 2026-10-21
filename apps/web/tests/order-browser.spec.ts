@@ -24,6 +24,16 @@ test('pagina com snapshot e busca no conjunto autorizado, preservando a página 
   page,
 }) => {
   const queries: URL[] = [];
+  const reactErrors: string[] = [];
+  page.on('console', (message) => {
+    if (
+      message.type() === 'error' &&
+      /Cannot update a component|while rendering|hydration|hydrating|Minified React/i.test(
+        message.text(),
+      )
+    )
+      reactErrors.push(message.text());
+  });
   await page.route('**/api/v1/auth/me', (route) =>
     route.fulfill({
       json: {
@@ -128,4 +138,5 @@ test('pagina com snapshot e busca no conjunto autorizado, preservando a página 
   await page.getByLabel('Código do pedido', { exact: true }).fill(wanted.publicCode.toLowerCase());
   await page.getByRole('button', { name: 'Buscar pedido', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Nenhum pedido encontrado' })).toBeVisible();
+  expect(reactErrors).toEqual([]);
 });

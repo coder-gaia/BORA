@@ -1,0 +1,56 @@
+﻿{
+  "capturedAt": "2026-10-21T14:45:01.5165727Z",
+  "dockerContext": "desktop-linux",
+  "host": {
+    "availableProcessors": 16,
+    "memoryBytes": 9292836864,
+    "osType": "linux",
+    "architecture": "x86_64"
+  },
+  "runner": {
+    "id": "8cb1659d2929fccb1ca0e691a853670f73f12982a357cbbfd119fbe65f759e12",
+    "name": "bora-load-benchmark-20261021-113946-202",
+    "nanoCpus": 4000000000,
+    "memoryBytes": 3221225472,
+    "cpuSet": "2-5",
+    "running": "true"
+  },
+  "source": {
+    "sourceSha256": "c891fdce3193b30b77d0466b6ae8dce8ca707877bb9bfc1ce367154ed7eecd06",
+    "benchmark": "load",
+    "cpus": 4,
+    "memoryBytes": 3221225472,
+    "databasePath": "IP interno do PostgreSQL na bridge Docker, porta 5432",
+    "controlHost": "host.docker.internal"
+  },
+  "database": {
+    "id": "6ac6284d87ace64b769261081fa1868f0ee5ae768c93d650cd980b08af64d13c",
+    "nanoCpus": 1000000000,
+    "memoryBytes": 536870912,
+    "cpuSet": "2-5",
+    "running": "true"
+  },
+  "secondProfile": {
+    "couriers": 150,
+    "source": {
+      "sourceSha256": "c891fdce3193b30b77d0466b6ae8dce8ca707877bb9bfc1ce367154ed7eecd06",
+      "benchmark": "load",
+      "cpus": 4,
+      "memoryBytes": 3221225472,
+      "databasePath": "IP interno do PostgreSQL na bridge Docker, porta 5432",
+      "controlHost": "host.docker.internal"
+    },
+    "runner": {
+      "id": "2638d11dcae505ad549ed35a8c4d9071a4a62aff45e9abeca1f23de50c51f9ee",
+      "nanoCpus": 4000000000,
+      "memoryBytes": 3221225472,
+      "cpuSet": "2-5"
+    },
+    "database": {
+      "id": "f3773bb63cc913f8844d00c43996711324a5df32828f2b0959e3540ecef42fcd",
+      "nanoCpus": 1000000000,
+      "memoryBytes": 536870912,
+      "cpuSet": "2-5"
+    }
+  }
+}

@@ -12,7 +12,7 @@ COPY apps/api/src apps/api/src
 COPY infra/osm/data infra/osm/data
 
 RUN chmod +x mvnw \
-    && ./mvnw --batch-mode --no-transfer-progress -pl apps/api -am package -DskipTests
+    && ./mvnw --batch-mode --no-transfer-progress -pl apps/api -am package -Dmaven.test.skip=true
 
 FROM eclipse-temurin:25.0.4.1_1-jre-noble AS runtime
 RUN apt-get update \

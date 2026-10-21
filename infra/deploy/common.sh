@@ -128,6 +128,38 @@ prepare_routing_graph() {
   fi
 }
 
+copy_proxy_policy() {
+  local source="$BUNDLE_ROOT/infra/caddy/content-security-policy" policy temporary invalid_bytes
+  local LC_ALL=C
+  if [[ ! -f $source ]]; then
+    # Bundles antigos mantêm a política literal no próprio Caddyfile.
+    if grep -Fq '{file./etc/caddy/content-security-policy}' "$BUNDLE_ROOT/infra/caddy/Caddyfile"; then
+      fail 'O bundle exige o arquivo content-security-policy.'
+      return 1
+    fi
+    return 0
+  fi
+  # BusyBox grep can miss NUL even with -a; inspect bytes before shell substitution.
+  invalid_bytes=$(tr -d '\040-\176\012' < "$source" | wc -c) || return 1
+  if [[ $invalid_bytes -ne 0 ]]; then
+    fail 'A política CSP contém bytes fora do ASCII imprimível.'
+    return 1
+  fi
+  policy=$(cat "$source") || return 1
+  [[ -n $policy && ${#policy} -le 16384 && $policy =~ ^[[:print:]]+$ && $policy =~ [^[:space:]] ]] \
+    || fail 'A política CSP deve conter uma linha ASCII imprimível, de até 16384 bytes.' || return 1
+  if [[ -f $BORA_CONFIG_DIR/content-security-policy ]] \
+    && cmp -s <(printf '%s\n' "$policy") "$BORA_CONFIG_DIR/content-security-policy"; then
+    chmod 644 "$BORA_CONFIG_DIR/content-security-policy"
+    return
+  fi
+  temporary=$(mktemp "$BORA_CONFIG_DIR/.content-security-policy.XXXXXX") || return 1
+  printf '%s\n' "$policy" > "$temporary" || return 1
+  chmod 644 "$temporary" || return 1
+  # O bind mount é do diretório; cada requisição vê a política antiga ou a nova inteira.
+  mv -f "$temporary" "$BORA_CONFIG_DIR/content-security-policy"
+}
+
 copy_proxy_config() {
   local temporary
   PROXY_CONFIG_CHANGED=false
@@ -136,6 +168,7 @@ copy_proxy_config() {
   # O Caddy descarta capabilities e precisa atravessar o diretório de outro UID.
   # Este diretório contém apenas a configuração pública do proxy.
   chmod 755 "$BORA_CONFIG_DIR" || return 1
+  copy_proxy_policy || return 1
   if [[ ! -e $BORA_CONFIG_DIR/upstream-mode ]]; then
     write_upstream_mode both || return 1
   fi

@@ -21,8 +21,10 @@ type Container = {
   Mounts: { Destination: string; Type: string; Name?: string }[];
 };
 const execute = promisify(execFile);
-const project = 'bora-sim-soak';
-const context = 'desktop-linux';
+const project = process.env.BORA_OPS_FIXTURE_PROJECT || 'bora-sim-soak';
+const context =
+  process.env.BORA_OPS_FIXTURE_DOCKER_CONTEXT ||
+  (process.platform === 'win32' ? 'desktop-linux' : 'default');
 const apiOrigin = 'http://127.0.0.1:18081';
 const run = () => crypto.randomUUID();
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -374,6 +376,10 @@ export class LocalOperationsFixture {
     }
   }
   private async prepare() {
+    check(
+      ['bora-sim-soak', 'bora-m13-e2e'].includes(project),
+      'Fixture project must be an explicitly supported local E2E project.',
+    );
     const endpoint = JSON.parse(
       await this.docker(
         'context',
@@ -384,16 +390,18 @@ export class LocalOperationsFixture {
       ),
     ) as string;
     check(
-      endpoint.toLowerCase() === 'npipe:////./pipe/dockerdesktoplinuxengine',
-      'Fixture Docker endpoint must be the local Linux Desktop pipe.',
+      process.platform === 'win32'
+        ? endpoint.toLowerCase() === 'npipe:////./pipe/dockerdesktoplinuxengine'
+        : endpoint === 'unix:///var/run/docker.sock',
+      'Fixture Docker endpoint must be the local Desktop pipe or the local Linux socket.',
     );
     const os = JSON.parse(
       await this.docker('info', '--format', '{{json .OperatingSystem}}'),
     ) as string;
     const type = JSON.parse(await this.docker('info', '--format', '{{json .OSType}}')) as string;
     check(
-      type === 'linux' && /Docker Desktop/i.test(os),
-      'Fixture Docker daemon is not Linux Docker Desktop.',
+      type === 'linux' && (process.platform !== 'win32' || /Docker Desktop/i.test(os)),
+      'Fixture Docker daemon must be local Linux (Docker Desktop on Windows).',
     );
     [this.db, this.simulator, this.api] = await Promise.all([
       this.service('db'),
@@ -420,13 +428,13 @@ export class LocalOperationsFixture {
     );
     const expectedVolume = process.env.BORA_OPS_FIXTURE_DB_VOLUME;
     check(
-      expectedVolume && /^bora-m12-[a-zA-Z0-9_.-]+$/.test(expectedVolume),
-      'Name the reviewed M12 fixture volume explicitly with BORA_OPS_FIXTURE_DB_VOLUME.',
+      expectedVolume && /^bora-m(?:12|13)-[a-zA-Z0-9_.-]+$/.test(expectedVolume),
+      'Name the reviewed M12/M13 fixture volume explicitly with BORA_OPS_FIXTURE_DB_VOLUME.',
     );
     const data = this.db.Mounts.filter((mount) => mount.Destination === '/var/lib/postgresql');
     check(
       data.length === 1 && data[0].Type === 'volume' && data[0].Name === expectedVolume,
-      'The local database volume does not match the explicit M12 fixture volume.',
+      'The local database volume does not match the explicit fixture volume.',
     );
     const env = (container: Container, name: string) =>
       container.Config.Env.find((value) => value.startsWith(`${name}=`))?.slice(name.length + 1);

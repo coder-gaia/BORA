@@ -22,7 +22,7 @@
   color: var(--muted-foreground);
   font-size: 11px;
 }
-.delivery-progress h4 {
+.delivery-progress-title {
   margin: 0;
   font-size: 18px;
   font-weight: 600;

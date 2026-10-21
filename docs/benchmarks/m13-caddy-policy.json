@@ -1,0 +1,53 @@
+{
+  "startedAt": "2026-10-21T13:24:40.398Z",
+  "finishedAt": "2026-10-21T13:24:50.284Z",
+  "image": "caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f",
+  "caddyfileSha256": "e2bf7810e03f9b9c8d3fc5478eee671dcda176db1ee5c017bc1dd34dce2f8808",
+  "policySha256": "e06e1b675affc2885384b6cd5ec1ed6adf98d422342a5637cb611b6b5378eaa0",
+  "scope": "Caddyfile de produção, HTTP/1.1 local e rename em filesystem Linux, sem APIs ou dados do projeto",
+  "retries": 0,
+  "structuralReload": {
+    "requests": 3,
+    "failures": 3,
+    "results": [
+      {
+        "success": false,
+        "bytesReceived": 0,
+        "remoteFin": true
+      },
+      {
+        "success": false,
+        "bytesReceived": 0,
+        "remoteFin": true
+      },
+      {
+        "success": false,
+        "bytesReceived": 0,
+        "remoteFin": true
+      }
+    ],
+    "qualification": "FAIL",
+    "reference": "https://github.com/caddyserver/caddy/issues/8233"
+  },
+  "atomicPolicy": {
+    "changes": 20,
+    "requests": 609,
+    "failures": 0,
+    "activeConfigurationUnchanged": true,
+    "containerUnchanged": true,
+    "partialRequestSurvived": true,
+    "qualification": "PASS",
+    "rollbackVerified": true
+  },
+  "missingAndEmptyPolicyFailClosed": true,
+  "result": "PASS_ATOMIC_POLICY_WITH_STRUCTURAL_RELOAD_REPORTED_SEPARATELY",
+  "conditions": {
+    "memoryLimitBytes": 100663296,
+    "productionCaddyfile": true,
+    "policyPublisher": "Rename atômico no filesystem Linux",
+    "headerOracle": "Somente a política anterior ou seguinte inteira é aceita; erros de transporte reprovam o ensaio.",
+    "productionVmMeasured": false,
+    "firstM13MigrationRequiresStructuralReload": true
+  },
+  "originalReportSha256": "fe2dab0ca276a904dc22a9376f1ea5ab1cfd278868a93f603ead3459a15fe443"
+}

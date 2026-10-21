@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { notifyManager, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   lazy,
   Suspense,
@@ -372,7 +372,7 @@ export function OrderBrowser({
     void refetch();
   }, [refetch, revision, status, code, scope, sort, page]);
   const observe = useCallback(
-    (notify: () => void) => queryClient.getQueryCache().subscribe(notify),
+    (notify: () => void) => queryClient.getQueryCache().subscribe(notifyManager.batchCalls(notify)),
     [queryClient],
   );
   const invalidated = useSyncExternalStore(

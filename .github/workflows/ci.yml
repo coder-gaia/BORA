@@ -45,6 +45,10 @@ jobs:
       - run: npm ci --prefix apps/web/tools/api-contract
       - name: Conferir tipos gerados do contrato
         run: node scripts/generate-api-types.mjs --check
+      - name: Auditar dependências npm
+        run: |
+          npm audit --prefix apps/web
+          npm audit --prefix apps/web/tools/api-contract
       - name: Verificar formatação dos arquivos versionados
         run: node scripts/format.mjs
       - run: npm run lint --prefix apps/web
@@ -67,12 +71,26 @@ jobs:
         run: docker build --tag bora-postgis:18.6-3.6.4 infra/postgres
       - name: Verificar formatação, compilar e testar
         run: ./mvnw --batch-mode --no-transfer-progress verify
+      - name: Compilar a suíte de carga reproduzível
+        run: ./mvnw --batch-mode --no-transfer-progress -f infra/benchmark/gatling/pom.xml test-compile
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .node-version
       - run: npm ci --prefix apps/web/tools/api-contract
       - name: Conferir contrato exportado contra os tipos da web
         run: node scripts/generate-api-types.mjs --schema=apps/api/target/openapi.json --check
+      - name: Auditar dependências Maven de execução
+        run: |
+          mkdir -p target/quality
+          ./mvnw --batch-mode --no-transfer-progress dependency:list -DincludeScope=runtime -DoutputFile=target/runtime-dependencies.txt
+          node scripts/audit-maven.mjs apps/api/target/runtime-dependencies.txt apps/simulator/target/runtime-dependencies.txt --output target/quality/maven-dependencies.json
+      - name: Preservar auditoria Maven
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: auditoria-maven
+          path: target/quality/
+          if-no-files-found: ignore
 
   postgres:
     name: PostGIS (${{ matrix.arch }})
@@ -125,8 +143,12 @@ jobs:
           test "$result" = t
 
   deploy-tests:
-    name: Atualização gradual e recuperação
+    name: ${{ matrix.suite == 'deploy' && 'Atualização gradual e recuperação' || 'Interface e acessibilidade' }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [deploy, web]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -169,4 +191,31 @@ jobs:
           cache-from: type=gha,scope=bora-postgis-amd64
           cache-to: type=gha,mode=max,scope=bora-postgis-amd64
       - name: Testar publicação, falha e recuperação com HTTP contínuo
+        if: matrix.suite == 'deploy'
         run: bash infra/deploy/test.sh
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: matrix.suite == 'web'
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci --prefix apps/web
+        if: matrix.suite == 'web'
+      - name: Instalar Chromium para os testes de interface
+        if: matrix.suite == 'web'
+        run: node apps/web/node_modules/@playwright/test/cli.js install --with-deps chromium
+      - name: Qualificar CSP atômica e registrar limite do reload
+        if: matrix.suite == 'web'
+        run: |
+          mkdir -p target/quality/web
+          node scripts/check-caddy-policy.mjs --report target/quality/web/caddy-policy.json
+      - name: Testar fluxos, reinício do cluster, foco e acessibilidade
+        if: matrix.suite == 'web'
+        run: bash infra/quality/web.sh
+      - name: Preservar evidências da interface
+        if: always() && matrix.suite == 'web'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: qualidade-web
+          path: target/quality/web/
+          if-no-files-found: ignore

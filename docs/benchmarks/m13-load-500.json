@@ -1,0 +1,435 @@
+{
+  "qualified": true,
+  "startedAt": "2026-10-21T14:47:23.780079280Z",
+  "sourceSha256": "c891fdce3193b30b77d0466b6ae8dce8ca707877bb9bfc1ce367154ed7eecd06",
+  "gatlingVersion": "3.16.0",
+  "javaVersion": "25.0.4.1+1-LTS",
+  "architecture": "amd64",
+  "availableProcessors": 4,
+  "maxHeapBytes": 1073741824,
+  "databaseMemoryBytes": 536870912,
+  "databaseCpuQuota": 1,
+  "routingManifest": "routing/sp-fixture-manifest.json",
+  "datasetSha256": "edbc4d0b53d21b6b4febe82f4b22b3610f3025398785cc7b44e9c2bfc06e0cbf",
+  "couriers": 500,
+  "positionsPerSecond": 250,
+  "ordersPerSecond": 2,
+  "warmupSeconds": 65,
+  "warmupRampSeconds": 20,
+  "warmupMethod": "GPS de zero à taxa alvo em 20 s, seguido de 45 s na taxa alvo; pedidos a partir de 5 s. Mesma sequência de atores até o fim da medição.",
+  "measurementSeconds": 60,
+  "positionPattern": "Uma posição por entregador a cada 2 s, na Paulista; 20 lojas públicas co-localizadas. Sem aceitar ofertas ou concluir entregas.",
+  "authentication": "Sessões Spring Session JDBC preparadas no banco descartável; CSRF obtido por HTTP; filtros, persistência e Bucket4j de produção sem bypass.",
+  "positionOracle": "Spy de teste chama enqueue real e registra epoch/timestamp aceitos em memória, sem SQL por GPS. O overhead do Mockito faz parte da medição. Mesmo epoch exige posição exata; epoch posterior permite descarte previsto pelo contrato de reserva/liberação.",
+  "observerMaxGapMillis": 517,
+  "invariantObservations": 268,
+  "invariantMaxima": {
+    "multiple_pending_per_order": 0,
+    "multiple_pending_per_courier": 0,
+    "multiple_active_orders": 0,
+    "offered_without_pending": 0,
+    "invalid_pending_state": 0,
+    "invalid_assigned_state": 0,
+    "private_to_simulator": 0,
+    "invalid_deadlines": 0
+  },
+  "gatlingExitCode": 0,
+  "buffer": {
+    "pendingCouriers": 0,
+    "bufferedPoints": 0,
+    "oldestQueuedAt": "2026-10-21T14:49:46.357859756Z",
+    "flushFailures": 0,
+    "maxPersistLagMillis": 312,
+    "lastFlushAt": "2026-10-21T14:49:45.301980Z"
+  },
+  "measuredOrders": 120,
+  "ordersWithFirstOffer": 120,
+  "firstOfferP95Millis": 503.629,
+  "persistedFreshCouriers": 500,
+  "capturedAcceptedCouriers": 500,
+  "plannedPositionReceipts": 28750,
+  "acceptedPositionReceipts": 28750,
+  "ignoredOnlyPositionReceipts": 0,
+  "checkedPersistedCouriers": 500,
+  "couriersWithExactLatestPosition": 497,
+  "couriersWithSameEpochExactPosition": 480,
+  "couriersWithNewerEpoch": 20,
+  "couriersWithUnexplainedPositionMismatch": 0,
+  "positionEpochEvidence": [
+    {
+      "courierId": "1ebba0c4-c307-49f1-91df-19e4a71e28bf",
+      "status": "OFFERED",
+      "currentEpoch": 7,
+      "persistedRecordedAt": "2026-10-21T14:49:43.313694Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:44.444452Z",
+      "offer_expires_at": "2026-10-21T14:50:14.444452Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:43.313694Z",
+      "latestAccepted": {
+        "epoch": 5,
+        "recordedAt": "2026-10-21T14:49:43.313694Z",
+        "acceptedAt": "2026-10-21T14:49:43.318237339Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "1fbdba1a-dd94-41e3-ab4a-468811cdb7ee",
+      "status": "OFFERED",
+      "currentEpoch": 7,
+      "persistedRecordedAt": "2026-10-21T14:49:43.225668Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:45.044321Z",
+      "offer_expires_at": "2026-10-21T14:50:15.044321Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:43.225668Z",
+      "latestAccepted": {
+        "epoch": 5,
+        "recordedAt": "2026-10-21T14:49:43.225668Z",
+        "acceptedAt": "2026-10-21T14:49:43.230888238Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "20f96307-1fc3-414c-b984-3fcf216e38bd",
+      "status": "OFFERED",
+      "currentEpoch": 7,
+      "persistedRecordedAt": "2026-10-21T14:49:44.749586Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:45.065719Z",
+      "offer_expires_at": "2026-10-21T14:50:15.065719Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:44.749586Z",
+      "latestAccepted": {
+        "epoch": 5,
+        "recordedAt": "2026-10-21T14:49:44.749586Z",
+        "acceptedAt": "2026-10-21T14:49:44.755773157Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "2135845a-934b-498c-b1f9-822279cc6fad",
+      "status": "OFFERED",
+      "currentEpoch": 7,
+      "persistedRecordedAt": "2026-10-21T14:49:44.685613Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:45.106575Z",
+      "offer_expires_at": "2026-10-21T14:50:15.106575Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:44.685613Z",
+      "latestAccepted": {
+        "epoch": 5,
+        "recordedAt": "2026-10-21T14:49:44.685613Z",
+        "acceptedAt": "2026-10-21T14:49:44.691496844Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "21df9c94-543c-481b-9fee-732560647241",
+      "status": "OFFERED",
+      "currentEpoch": 7,
+      "persistedRecordedAt": "2026-10-21T14:49:43.237825Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:45.087826Z",
+      "offer_expires_at": "2026-10-21T14:50:15.087826Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:43.237825Z",
+      "latestAccepted": {
+        "epoch": 5,
+        "recordedAt": "2026-10-21T14:49:43.237825Z",
+        "acceptedAt": "2026-10-21T14:49:43.243631439Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "221050be-e7f7-4304-b020-da8ea48f3a17",
+      "status": "OFFERED",
+      "currentEpoch": 7,
+      "persistedRecordedAt": "2026-10-21T14:49:43.517815Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:46.223376Z",
+      "offer_expires_at": "2026-10-21T14:50:16.223376Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:43.517815Z",
+      "latestAccepted": {
+        "epoch": 5,
+        "recordedAt": "2026-10-21T14:49:43.517815Z",
+        "acceptedAt": "2026-10-21T14:49:43.523357577Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "22e626c9-1b87-47cc-a250-c873ce30f89d",
+      "status": "OFFERED",
+      "currentEpoch": 7,
+      "persistedRecordedAt": "2026-10-21T14:49:43.741648Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:46.241635Z",
+      "offer_expires_at": "2026-10-21T14:50:16.241635Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:43.741648Z",
+      "latestAccepted": {
+        "epoch": 5,
+        "recordedAt": "2026-10-21T14:49:43.741648Z",
+        "acceptedAt": "2026-10-21T14:49:43.746331632Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "3a70a282-6691-47b4-9b3e-68ed60299b4d",
+      "status": "OFFERED",
+      "currentEpoch": 5,
+      "persistedRecordedAt": "2026-10-21T14:49:41.797365Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:44.424220Z",
+      "offer_expires_at": "2026-10-21T14:50:14.424220Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:43.797686Z",
+      "latestAccepted": {
+        "epoch": 3,
+        "recordedAt": "2026-10-21T14:49:43.797686Z",
+        "acceptedAt": "2026-10-21T14:49:43.802731214Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "3c879af7-90f0-4323-99e5-3159b888a83f",
+      "status": "OFFERED",
+      "currentEpoch": 5,
+      "persistedRecordedAt": "2026-10-21T14:49:43.773681Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:45.181639Z",
+      "offer_expires_at": "2026-10-21T14:50:15.181639Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:43.773681Z",
+      "latestAccepted": {
+        "epoch": 3,
+        "recordedAt": "2026-10-21T14:49:43.773681Z",
+        "acceptedAt": "2026-10-21T14:49:43.778818747Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "3ea7d3b1-1851-4839-83bb-a829f75c6792",
+      "status": "OFFERED",
+      "currentEpoch": 5,
+      "persistedRecordedAt": "2026-10-21T14:49:44.969758Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:45.127379Z",
+      "offer_expires_at": "2026-10-21T14:50:15.127379Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:44.969758Z",
+      "latestAccepted": {
+        "epoch": 4,
+        "recordedAt": "2026-10-21T14:49:44.969758Z",
+        "acceptedAt": "2026-10-21T14:49:44.974223545Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "3ed9bcd0-1a8d-4a10-b11f-2cb36b069a29",
+      "status": "OFFERED",
+      "currentEpoch": 5,
+      "persistedRecordedAt": "2026-10-21T14:49:43.677717Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:46.298683Z",
+      "offer_expires_at": "2026-10-21T14:50:16.298683Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:43.677717Z",
+      "latestAccepted": {
+        "epoch": 3,
+        "recordedAt": "2026-10-21T14:49:43.677717Z",
+        "acceptedAt": "2026-10-21T14:49:43.682900527Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "3fe0b643-96d0-4298-b2a6-a5af959d7cd4",
+      "status": "OFFERED",
+      "currentEpoch": 5,
+      "persistedRecordedAt": "2026-10-21T14:49:44.065760Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:46.260227Z",
+      "offer_expires_at": "2026-10-21T14:50:16.260227Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:44.065760Z",
+      "latestAccepted": {
+        "epoch": 3,
+        "recordedAt": "2026-10-21T14:49:44.065760Z",
+        "acceptedAt": "2026-10-21T14:49:44.071336657Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "52601aba-c0da-4c7f-b67f-b2dd773dfada",
+      "status": "OFFERED",
+      "currentEpoch": 3,
+      "persistedRecordedAt": "2026-10-21T14:49:42.297262Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:44.485288Z",
+      "offer_expires_at": "2026-10-21T14:50:14.485288Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:44.297567Z",
+      "latestAccepted": {
+        "epoch": 2,
+        "recordedAt": "2026-10-21T14:49:44.297567Z",
+        "acceptedAt": "2026-10-21T14:49:44.303110912Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "53401daa-2eda-4dfa-987b-513cb3199f96",
+      "status": "OFFERED",
+      "currentEpoch": 3,
+      "persistedRecordedAt": "2026-10-21T14:49:43.229683Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:44.522452Z",
+      "offer_expires_at": "2026-10-21T14:50:14.522452Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:43.229683Z",
+      "latestAccepted": {
+        "epoch": 1,
+        "recordedAt": "2026-10-21T14:49:43.229683Z",
+        "acceptedAt": "2026-10-21T14:49:43.234908609Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "5355b967-c11e-4384-9237-655e982ebb97",
+      "status": "OFFERED",
+      "currentEpoch": 3,
+      "persistedRecordedAt": "2026-10-21T14:49:42.897381Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:45.146226Z",
+      "offer_expires_at": "2026-10-21T14:50:15.146226Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:44.897595Z",
+      "latestAccepted": {
+        "epoch": 1,
+        "recordedAt": "2026-10-21T14:49:44.897595Z",
+        "acceptedAt": "2026-10-21T14:49:44.902967242Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "53b49d50-7a98-4bd8-ab56-85fe03aa7808",
+      "status": "OFFERED",
+      "currentEpoch": 3,
+      "persistedRecordedAt": "2026-10-21T14:49:43.961759Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:46.280309Z",
+      "offer_expires_at": "2026-10-21T14:50:16.280309Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:43.961759Z",
+      "latestAccepted": {
+        "epoch": 1,
+        "recordedAt": "2026-10-21T14:49:43.961759Z",
+        "acceptedAt": "2026-10-21T14:49:43.966574583Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "540efeea-3651-45d2-ad78-aeaa501b329a",
+      "status": "AVAILABLE",
+      "currentEpoch": 2,
+      "persistedRecordedAt": "2026-10-21T14:49:44.477815Z",
+      "lastOfferStatus": "EXPIRED",
+      "offer_created_at": "2026-10-21T14:49:15.516117Z",
+      "offer_expires_at": "2026-10-21T14:49:45.516117Z",
+      "offer_responded_at": "2026-10-21T14:49:45.945063Z",
+      "latestResponseRecordedAt": "2026-10-21T14:49:44.477815Z",
+      "latestAccepted": {
+        "epoch": 1,
+        "recordedAt": "2026-10-21T14:49:44.477815Z",
+        "acceptedAt": "2026-10-21T14:49:44.492726154Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "7cbd4764-8521-40df-b56b-8927084d73c5",
+      "status": "OFFERED",
+      "currentEpoch": 1,
+      "persistedRecordedAt": "2026-10-21T14:49:43.753849Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:44.504304Z",
+      "offer_expires_at": "2026-10-21T14:50:14.504304Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:43.753849Z",
+      "latestAccepted": {
+        "epoch": 0,
+        "recordedAt": "2026-10-21T14:49:43.753849Z",
+        "acceptedAt": "2026-10-21T14:49:43.759416090Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "7cd0b110-b445-4030-97d1-415832208340",
+      "status": "OFFERED",
+      "currentEpoch": 1,
+      "persistedRecordedAt": "2026-10-21T14:49:44.349658Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:45.199432Z",
+      "offer_expires_at": "2026-10-21T14:50:15.199432Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:44.349658Z",
+      "latestAccepted": {
+        "epoch": 0,
+        "recordedAt": "2026-10-21T14:49:44.349658Z",
+        "acceptedAt": "2026-10-21T14:49:44.355133529Z"
+      },
+      "reason": "NEWER_EPOCH"
+    },
+    {
+      "courierId": "7ce3ccc4-650d-4540-9110-d719b2d2c6c7",
+      "status": "OFFERED",
+      "currentEpoch": 1,
+      "persistedRecordedAt": "2026-10-21T14:49:43.245600Z",
+      "lastOfferStatus": "PENDING",
+      "offer_created_at": "2026-10-21T14:49:46.318069Z",
+      "offer_expires_at": "2026-10-21T14:50:16.318069Z",
+      "offer_responded_at": null,
+      "latestResponseRecordedAt": "2026-10-21T14:49:43.245600Z",
+      "latestAccepted": {
+        "epoch": 0,
+        "recordedAt": "2026-10-21T14:49:43.245600Z",
+        "acceptedAt": "2026-10-21T14:49:43.255586981Z"
+      },
+      "reason": "NEWER_EPOCH"
+    }
+  ],
+  "gatlingStatistics": {
+    "GPS aquecimento": {
+      "requests": 13750,
+      "p95Millis": 16,
+      "p50Millis": 6,
+      "failures": 0,
+      "maxMillis": 373,
+      "p99Millis": 66
+    },
+    "Pedido aquecimento": {
+      "requests": 120,
+      "p95Millis": 51,
+      "p50Millis": 20,
+      "failures": 0,
+      "maxMillis": 934,
+      "p99Millis": 443
+    },
+    "GPS medido": {
+      "requests": 15000,
+      "p95Millis": 12,
+      "p50Millis": 6,
+      "failures": 0,
+      "maxMillis": 173,
+      "p99Millis": 41
+    },
+    "Pedido medido": {
+      "requests": 120,
+      "p95Millis": 42,
+      "p50Millis": 15,
+      "failures": 0,
+      "maxMillis": 126,
+      "p99Millis": 66
+    }
+  },
+  "finishedAt": "2026-10-21T14:49:46.456688712Z"
+}

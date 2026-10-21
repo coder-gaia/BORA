@@ -160,8 +160,17 @@ test('dois treinos seguidos mantêm código, pedido e linha do tempo da intenç�
   page,
 }) => {
   const state = await trainingFixture(page);
-  await page.getByRole('button', { name: 'Criar pedido de treino', exact: true }).click();
-  const first = state.receipt!;
+  async function createTraining() {
+    const response = page.waitForResponse(
+      (value) =>
+        value.request().method() === 'POST' &&
+        new URL(value.url()).pathname === '/api/v1/courier/training-order',
+    );
+    await page.getByRole('button', { name: 'Criar pedido de treino', exact: true }).click();
+    expect((await response).status()).toBe(201);
+    return state.receipt!;
+  }
+  const first = await createTraining();
   await page.getByRole('button', { name: 'Aceitar oferta', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Entrega em andamento' })).toBeVisible();
   state.arrive();
@@ -171,8 +180,12 @@ test('dois treinos seguidos mantêm código, pedido e linha do tempo da intenç�
   await page.getByRole('button', { name: 'Confirmar entrega', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Última entrega', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Preparar novo treino', exact: true }).click();
-  await page.getByRole('button', { name: 'Criar pedido de treino', exact: true }).click();
-  const second = state.receipt!;
+  // A click completes before the asynchronous training request is handled.
+  await page.route('**/api/v1/courier/training-order', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.fallback();
+  });
+  const second = await createTraining();
   expect(second.orderId).not.toBe(first.orderId);
   expect(second.confirmationCode).not.toBe(first.confirmationCode);
   await expect(page.locator('.training-code .confirmation-code')).toHaveText(
