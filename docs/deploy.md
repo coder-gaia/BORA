@@ -61,6 +61,73 @@ existirem. A aplicação fica indisponível durante a desalocação; ao iniciar 
 os containers e o HTTPS. Consultar os
 [estados de energia e cobrança](https://learn.microsoft.com/en-us/azure/virtual-machines/states-billing).
 
+## Disponibilidade programada
+
+A disponibilidade é programada para reduzir o consumo depois da divulgação.
+O [workflow de disponibilidade](../.github/workflows/availability.yml) aplica a
+[política de horário](../scripts/availability-policy.mjs) em `America/Sao_Paulo`:
+
+| Período                                         | Estado previsto                                                |
+| ----------------------------------------------- | -------------------------------------------------------------- |
+| Até 25/10/2026 às 22h                           | VM ligada continuamente, inclusive à noite e no fim de semana. |
+| A partir de 26/10, de segunda a sexta, às 08h45 | Início do aquecimento para receber visitas às 9h.              |
+| Dias úteis, das 9h às 22h                       | Janela pública da demonstração.                                |
+| Depois das 22h e aos sábados e domingos         | VM desalocada.                                                 |
+
+O fim da divulgação corresponde a `2026-10-26T01:00:00Z`. Antes desse instante, a política
+nunca solicita desligamento. A ativação deve validar essa fronteira sem antecipar a economia.
+O agendador usa UTC: `45 11 * * 1-5` prepara a abertura e `0 1 * * *` solicita o fechamento;
+`17,47 * * * *` reconcilia atrasos ou execuções perdidas. A decisão usa o horário efetivo da
+execução, após esperar a fila, autenticar e consultar a VM.
+
+Os runners hospedados do GitHub Actions são gratuitos para este repositório público. O cron
+pode atrasar ou perder execuções e não oferece SLA. Em repositórios públicos, o agendamento
+pode ser desativado após 60 dias sem atividade e precisa ser reativado. A antecedência de
+15 minutos e a reconciliação reduzem esse efeito, mas não garantem abertura no minuto exato.
+
+### Identidade e execução manual
+
+A autenticação Azure usa OIDC, sem senha ou client secret. As ações externas ficam fixadas
+por SHA de commit. A credencial federada deve aceitar somente o subject imutável
+`repo:coder-gaia@<owner_id>/BORA@<repo_id>:ref:refs/heads/main`, com issuer
+`https://token.actions.githubusercontent.com` e audience `api://AzureADTokenExchange`.
+Obtenha `owner_id` e `repo_id` pela API pública do repositório. Esses IDs vinculam a confiança
+ao proprietário e ao repositório originais, protegendo contra recriações ou transferências.
+Valide o claim `sub` atual antes de configurar a federação. Configure as repository variables
+`BORA_AZURE_CLIENT_ID`, `BORA_AZURE_TENANT_ID` e `BORA_AZURE_SUBSCRIPTION_ID`; são identificadores,
+não senhas. O RBAC customizado deve ficar restrito ao recurso da VM `bora-prod`, com apenas:
+
+- `Microsoft.Compute/virtualMachines/read`
+- `Microsoft.Compute/virtualMachines/instanceView/read`
+- `Microsoft.Compute/virtualMachines/start/action`
+- `Microsoft.Compute/virtualMachines/deallocate/action`
+
+Disponibilidade e publicação devem compartilhar o grupo `bora-production`, com
+`cancel-in-progress: false` e `queue: max`, preservando as publicações pendentes e evitando
+alterações simultâneas de energia e deploy. Em `workflow_dispatch`, `dry_run` é `true` por
+padrão: consulta o estado e mostra o plano sem alterar a energia. Para reconciliar efetivamente,
+execute manualmente com `dry_run: false`; isso aplica o horário atual, sem criar uma exceção
+permanente de funcionamento.
+
+Uma publicação manual fora do expediente exige ligar a VM como exceção administrativa antes
+do deploy. A próxima reconciliação volta ao estado previsto pelo horário; a intervenção não
+suspende a política. Desalocar preserva o IPv4 estático, discos, volumes, dados e arquivos
+persistidos de TLS do Caddy. Após iniciar a VM, o workflow aguarda a readiness HTTP com estado
+`UP`: o grafo e o banco precisam estar prontos antes de considerar a demonstração disponível.
+
+No plano Free do UptimeRobot, as pausas programadas aparecem como DOWN. Não há manutenção
+automática configurada para ocultá-las; esses intervalos precisam ser considerados ao ler
+o histórico de disponibilidade.
+
+### Estimativa de economia
+
+Usando os preços de referência acima e a base de 730 horas por mês, a janela das 9h às 22h
+de segunda a sexta resulta em aproximadamente US$ 29,72 mensais, contra US$ 62,66 com a VM
+continuamente ligada. Disco e IPv4 permanecem na conta mesmo com a VM desalocada. A estimativa
+exclui o aquecimento antecipado, atrasos do agendador, operações de disco e tráfego; esses itens
+podem elevar o total. O saldo real do crédito estudantil não foi apurado, portanto essa conta
+não determina por quanto tempo a assinatura permanecerá disponível.
+
 ## Preparar a VM
 
 Usar chaves diferentes para administração e deploy. Copiar para a VM somente a chave pública

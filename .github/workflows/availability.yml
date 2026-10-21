@@ -1,0 +1,138 @@
+name: Disponibilidade da demonstração
+
+on:
+  schedule:
+    # Os crons são UTC; a política valida novamente America/Sao_Paulo no momento da execução.
+    # A reconciliação também recupera uma execução atrasada ou perdida do agendador.
+    - cron: '17,47 * * * *'
+    - cron: '45 11 * * 1-5'
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Somente consultar a VM e mostrar o plano, sem alterar a energia'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# Compartilhado com release.yml: energia e publicação nunca alteram a VM ao mesmo tempo.
+# queue:max preserva as publicações pendentes quando chegam reconciliações agendadas.
+concurrency:
+  group: bora-production
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  reconcile:
+    name: Reconciliar energia da VM
+    if: github.repository == 'coder-gaia/BORA' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      - name: Validar as fronteiras da política
+        run: node --test scripts/availability-policy.test.mjs
+      - name: Autenticar na Azure com identidade federada
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
+        with:
+          client-id: ${{ vars.BORA_AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.BORA_AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.BORA_AZURE_SUBSCRIPTION_ID }}
+      - name: Aplicar a disponibilidade pelo horário atual
+        shell: bash
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.BORA_AZURE_SUBSCRIPTION_ID }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+        run: |
+          set -euo pipefail
+          [[ "$AZURE_SUBSCRIPTION_ID" =~ ^[0-9a-fA-F-]{36}$ ]]
+          [[ "$DRY_RUN" == true || "$DRY_RUN" == false ]]
+          vm_url="https://management.azure.com/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/rg-bora-prod/providers/Microsoft.Compute/virtualMachines/bora-prod"
+          read_state() {
+            az rest --method get --url "$vm_url/instanceView?api-version=2025-11-01" \
+              --query "statuses[?starts_with(code, 'PowerState/')].code | [0]" \
+              --output tsv --only-show-errors
+          }
+          state=$(read_state)
+          # Avaliar aqui, após login, fila e consulta. Não reaproveitar o horário do evento cron.
+          plan=$(node scripts/availability-policy.mjs --power-state "$state")
+          action=$(jq --exit-status --raw-output '.action' <<< "$plan")
+          printf '%s\n' "$plan"
+          {
+            echo '### Disponibilidade do Bora'
+            echo
+            jq --raw-output '"Horário de São Paulo: \(.localTime). Fase: \(.phase). Estado atual: \(.current). Estado desejado: \(.desired). Ação: \(.action).", "", .reason' <<< "$plan"
+            echo
+            echo "Simulação sem alteração: $DRY_RUN."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$DRY_RUN" == true ]]; then
+            exit 0
+          fi
+          case "$action" in
+            start)
+              az vm start --resource-group rg-bora-prod --name bora-prod \
+                --no-wait --output none --only-show-errors
+              ;;
+            deallocate)
+              az vm deallocate --resource-group rg-bora-prod --name bora-prod \
+                --no-wait --output none --only-show-errors
+              ;;
+            none)
+              echo 'A VM já está no estado esperado.'
+              ;;
+            wait)
+              echo 'Já existe uma transição de energia; a próxima execução reconciliará o estado.'
+              ;;
+            *)
+              echo 'A política retornou uma ação inesperada.' >&2
+              exit 1
+              ;;
+          esac
+          final_state=$(read_state)
+          if [[ "$action" == start || "$action" == deallocate ]]; then
+            expected="PowerState/$(jq --exit-status --raw-output '.desired' <<< "$plan")"
+            # Consultar apenas a VM: a identidade não precisa de acesso aos operationResults da assinatura.
+            for attempt in {1..60}; do
+              if [[ "$final_state" == "$expected" ]]; then
+                break
+              fi
+              sleep 10
+              final_state=$(read_state)
+            done
+          fi
+          echo "Estado final: $final_state."
+          echo "Estado final: $final_state." >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$action" == start && "$final_state" != PowerState/running ]] || \
+             [[ "$action" == deallocate && "$final_state" != PowerState/deallocated ]]; then
+            echo 'A operação terminou sem confirmar o estado de energia solicitado.' >&2
+            exit 1
+          fi
+          if [[ "$action" == start ]]; then
+            readiness_deadline=$((SECONDS + 180))
+            ready=false
+            while (( SECONDS < readiness_deadline )); do
+              if body=$(curl --fail --silent --show-error --connect-timeout 5 --max-time 10 \
+                https://bora.alexandregaia.me/actuator/health/readiness) && \
+                jq --exit-status '.status == "UP"' <<< "$body" > /dev/null; then
+                ready=true
+                break
+              fi
+              sleep 5
+            done
+            if [[ "$ready" != true ]]; then
+              echo 'A VM iniciou, mas a API não confirmou readiness UP no prazo.' >&2
+              exit 1
+            fi
+            echo 'Readiness pública da API: UP.'
+            echo 'Readiness pública da API: UP.' >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -27,7 +27,7 @@ jobs:
       - name: Verificar regras e histórico
         run: node scripts/check-rules.mjs
       - name: Testar verificações de regras
-        run: node --test scripts/check-rules.test.mjs scripts/check-http-continuity.test.mjs
+        run: node --test scripts/check-rules.test.mjs scripts/check-http-continuity.test.mjs scripts/availability-policy.test.mjs
       - name: Testar diagnóstico do simulador
         run: python3 -m unittest discover -s scripts -p test_simulator_soak.py
 
