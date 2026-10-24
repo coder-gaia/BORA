@@ -30,7 +30,7 @@
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <spring-modulith.version>2.1.1</spring-modulith.version>
     <graphhopper.version>11.1</graphhopper.version>
-    <commons-io.version>2.20.0</commons-io.version>
+    <commons-io.version>2.22.0</commons-io.version>
     <bucket4j.version>8.20.0</bucket4j.version>
     <!-- Correções de segurança nas mesmas linhas de compatibilidade do Boot. -->
     <jackson-2-bom.version>2.21.7</jackson-2-bom.version>
