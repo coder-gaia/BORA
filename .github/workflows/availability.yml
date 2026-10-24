@@ -43,7 +43,7 @@ jobs:
       - name: Validar as fronteiras da política
         run: node --test scripts/availability-policy.test.mjs
       - name: Autenticar na Azure com identidade federada
-        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ vars.BORA_AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.BORA_AZURE_TENANT_ID }}
