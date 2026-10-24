@@ -1,4 +1,4 @@
-FROM eclipse-temurin:25.0.4.1_1-jdk-noble AS build
+FROM eclipse-temurin:26.0.2.1_1-jdk-noble AS build
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends unzip \
     && rm -rf /var/lib/apt/lists/*
@@ -14,7 +14,7 @@ COPY infra/osm/data infra/osm/data
 RUN chmod +x mvnw \
     && ./mvnw --batch-mode --no-transfer-progress -pl apps/api -am package -Dmaven.test.skip=true
 
-FROM eclipse-temurin:25.0.4.1_1-jre-noble AS runtime
+FROM eclipse-temurin:26.0.2.1_1-jre-noble AS runtime
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
