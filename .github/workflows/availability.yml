@@ -1,12 +1,6 @@
-name: Disponibilidade da demonstração
+name: Disponibilidade manual da demonstração
 
 on:
-  schedule:
-    # Os crons são UTC; a política valida novamente America/Sao_Paulo no momento da execução.
-    # A reconciliação também recupera uma execução atrasada ou perdida do agendador.
-    - cron: '17,47 * * * *'
-    - cron: '45 11 * * 1-5'
-    - cron: '0 1 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -17,8 +11,8 @@ on:
 permissions:
   contents: read
 
-# Compartilhado com release.yml: energia e publicação nunca alteram a VM ao mesmo tempo.
-# queue:max preserva as publicações pendentes quando chegam reconciliações agendadas.
+# A agenda automática pertence à Azure. Este fluxo é uma recuperação manual.
+# A fila coordena a recuperação manual com as publicações do GitHub.
 concurrency:
   group: bora-production
   cancel-in-progress: false

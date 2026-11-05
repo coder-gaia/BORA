@@ -3,6 +3,9 @@ import { readFileSync } from 'node:fs';
 
 const ownerName = 'Alexandre Gaia';
 const ownerEmail = 'alexandregaia911@gmail.com';
+// Preserva a edição do README publicada pelo proprietário na interface do GitHub.
+// A exceção identifica somente esse objeto imutável; commits novos seguem todas as regras.
+const preservedDocumentationCommits = new Set(['51cc3728a6f5d37e46769e2733b373cdc1da1a0c']);
 const forbiddenDash = /[\u2012-\u2015]/u;
 const titlePattern =
   /^(?:feat|fix|chore|docs|test|refactor|perf|build|ci)(?:\([a-z0-9]+(?:[/-][a-z0-9]+)*\))?: [a-z][a-z0-9 /:,.()'&+\-]*$/u;
@@ -92,6 +95,10 @@ try {
       '--format=%an%x00%ae%x00%cn%x00%ce%x00%B',
       commit,
     ]).split('\0');
+    if (preservedDocumentationCommits.has(commit)) {
+      checkText(message, commit.slice(0, 7));
+      continue;
+    }
     checkIdentity(author, authorEmail, `${commit.slice(0, 7)}: autor`);
     checkIdentity(committer, committerEmail, `${commit.slice(0, 7)}: committer`);
     checkMessage(message, commit.slice(0, 7));

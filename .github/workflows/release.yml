@@ -115,6 +115,7 @@ jobs:
     name: Atualizar produção
     needs: [prepare, build]
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     permissions:
       contents: read
       packages: read
@@ -126,6 +127,9 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.version }}
           persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
       - name: Transferir bundle e implantar
         shell: bash
         env:
@@ -149,6 +153,16 @@ jobs:
             echo 'A main avançou durante o build. A versão anterior não será implantada.'
             exit 0
           fi
+          check_deployment_window() {
+            local deployment_window
+            deployment_window=$(node scripts/availability-policy.mjs --deployment-window)
+            printf '%s\n' "$deployment_window"
+            if ! jq --exit-status '.allowed == true' <<< "$deployment_window" > /dev/null; then
+              echo 'A janela de publicação terminou. Execute novamente em um dia útil, entre 09h20 e 21h45.' >&2
+              exit 1
+            fi
+          }
+          check_deployment_window
           umask 077
           known_hosts=$(mktemp "$RUNNER_TEMP/bora-known-hosts.XXXXXX")
           archive="$RUNNER_TEMP/bora-$RELEASE_SHA.tar.gz"
@@ -173,7 +187,8 @@ jobs:
           # shellcheck disable=SC2029
           ssh "${ssh_options[@]}" "$target" \
             "tar --no-same-owner --no-same-permissions -xzf '$remote/bundle.tar.gz' -C '$remote'"
+          check_deployment_window
           # Usuário e caminho foram validados; o token segue apenas pela entrada padrão.
           # shellcheck disable=SC2029
           printf '%s\n' "$GHCR_TOKEN" | ssh "${ssh_options[@]}" "$target" \
-            "env BORA_ROOT=/opt/bora GHCR_USERNAME='$GHCR_USERNAME' bash '$remote/infra/deploy/deploy.sh' '$RELEASE_SHA'"
+            "env BORA_ROOT=/opt/bora GHCR_USERNAME='$GHCR_USERNAME' bash '$remote/infra/deploy/scheduled-deploy.sh' '$RELEASE_SHA'"

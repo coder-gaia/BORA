@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { AVAILABILITY, availabilityAt, reconciliationAt } from './availability-policy.mjs';
+import {
+  AVAILABILITY,
+  availabilityAt,
+  deploymentAt,
+  reconciliationAt,
+} from './availability-policy.mjs';
 
 const at = (instant) => new Date(instant);
 
@@ -34,16 +39,16 @@ test('o fim da divulgação coincide exatamente com domingo 25/10 às 22h', () =
   );
 });
 
-test('segunda-feira só inicia o pré-aquecimento às 08h45', () => {
-  assert.equal(availabilityAt(at('2026-10-26T11:44:59.999Z')).desired, 'deallocated');
-  assert.equal(availabilityAt(at('2026-10-26T11:45:00Z')).desired, 'running');
-  assert.equal(availabilityAt(at('2026-10-26T12:00:00Z')).desired, 'running');
+test('segunda-feira só inicia o pré-aquecimento às 09h20', () => {
+  assert.equal(availabilityAt(at('2026-10-26T12:19:59.999Z')).desired, 'deallocated');
+  assert.equal(availabilityAt(at('2026-10-26T12:20:00Z')).desired, 'running');
+  assert.equal(availabilityAt(at('2026-10-26T13:00:00Z')).desired, 'running');
 });
 
-test('cada dia útil permanece ligado até 21h59 e desaloca às 22h', () => {
+test('cada dia útil permanece ligado até 22h29 e desaloca às 22h30', () => {
   for (const day of [26, 27, 28, 29, 30]) {
-    const opening = `2026-10-${day}T08:45:00-03:00`;
-    const closing = `2026-10-${day}T22:00:00-03:00`;
+    const opening = `2026-10-${day}T09:20:00-03:00`;
+    const closing = `2026-10-${day}T22:30:00-03:00`;
     assert.equal(availabilityAt(at(opening)).desired, 'running', opening);
     assert.equal(availabilityAt(new Date(at(closing).getTime() - 1)).desired, 'running', closing);
     assert.equal(availabilityAt(at(closing)).desired, 'deallocated', closing);
@@ -67,17 +72,18 @@ test('a virada do dia UTC não antecipa a virada do dia em São Paulo', () => {
   const policy = availabilityAt(at('2026-10-31T00:30:00Z'));
   assert.equal(policy.localTime, '2026-10-30T21:30:00');
   assert.equal(policy.desired, 'running');
-  assert.equal(availabilityAt(at('2026-10-31T01:00:00Z')).desired, 'deallocated');
+  assert.equal(availabilityAt(at('2026-10-31T01:29:59Z')).desired, 'running');
+  assert.equal(availabilityAt(at('2026-10-31T01:30:00Z')).desired, 'deallocated');
 });
 
 test('usa o instante atual ao reconciliar e não a intenção de um cron atrasado', () => {
-  assert.equal(reconciliationAt('PowerState/running', at('2026-10-26T12:00:00Z')).action, 'none');
+  assert.equal(reconciliationAt('PowerState/running', at('2026-10-26T13:00:00Z')).action, 'none');
   assert.equal(
-    reconciliationAt('PowerState/deallocated', at('2026-10-27T01:00:00Z')).action,
+    reconciliationAt('PowerState/deallocated', at('2026-10-27T01:30:00Z')).action,
     'none',
   );
   assert.equal(
-    reconciliationAt('PowerState/deallocated', at('2026-10-27T11:47:00Z')).action,
+    reconciliationAt('PowerState/deallocated', at('2026-10-27T12:30:00Z')).action,
     'start',
   );
 });
@@ -99,6 +105,23 @@ test('não disputa uma operação de energia que já está em andamento', () => 
       assert.equal(reconciliationAt(`PowerState/${state}`, at(instant)).action, 'wait');
     }
   }
+});
+
+test('publicação não começa antes da VM nem depois da margem segura', () => {
+  assert.equal(deploymentAt(at('2026-11-05T09:19:59-03:00')).allowed, false);
+  assert.equal(deploymentAt(at('2026-11-05T09:20:00-03:00')).allowed, true);
+  assert.equal(deploymentAt(at('2026-11-05T21:44:59-03:00')).allowed, true);
+  assert.equal(deploymentAt(at('2026-11-05T21:45:00-03:00')).allowed, false);
+  assert.equal(availabilityAt(at('2026-11-05T21:45:00-03:00')).desired, 'running');
+  assert.equal(deploymentAt(at('2026-11-07T12:00:00-03:00')).allowed, false);
+  assert.equal(deploymentAt(at('2026-11-08T12:00:00-03:00')).allowed, false);
+});
+
+test('a janela pública tem margens dentro do horário de energia', () => {
+  assert.equal(AVAILABILITY.publicStartMinute, 10 * 60);
+  assert.equal(AVAILABILITY.publicStopMinute, 22 * 60);
+  assert.ok(AVAILABILITY.startMinute < AVAILABILITY.publicStartMinute);
+  assert.ok(AVAILABILITY.publicStopMinute < AVAILABILITY.stopMinute);
 });
 
 test('datas inválidas e estados desconhecidos impedem qualquer operação', () => {

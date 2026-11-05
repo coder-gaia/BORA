@@ -7,3 +7,5 @@
 mvnw
 mvnw.cmd
 .mvn/wrapper/
+# Gerado sem dependências; scripts/logic-apps-availability.mjs --check valida o conteúdo.
+infra/availability/logic-apps.json

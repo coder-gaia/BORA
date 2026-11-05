@@ -4,8 +4,11 @@ import { fileURLToPath } from 'node:url';
 export const AVAILABILITY = Object.freeze({
   timeZone: 'America/Sao_Paulo',
   promotionEndsAt: '2026-10-26T01:00:00.000Z',
-  startMinute: 8 * 60 + 45,
-  stopMinute: 22 * 60,
+  startMinute: 9 * 60 + 20,
+  stopMinute: 22 * 60 + 30,
+  publicStartMinute: 10 * 60,
+  publicStopMinute: 22 * 60,
+  deploymentLastStartMinute: 21 * 60 + 45,
 });
 
 const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -45,7 +48,7 @@ export function availabilityAt(now = new Date()) {
     reason: promotion
       ? 'Divulgação: manter ligado até 25/10/2026 às 22h em São Paulo.'
       : inWindow
-        ? 'Dia útil: pré-aquecimento às 08h45 e disponibilidade das 09h às 22h.'
+        ? 'Dia útil: VM ligada das 09h20 às 22h30; janela pública das 10h às 22h.'
         : 'Fora do horário: desalocar para suspender a cobrança de computação.',
   };
 }
@@ -71,10 +74,34 @@ export function reconciliationAt(powerState, now = new Date()) {
   return { ...policy, current: state, action };
 }
 
+/** Reserva tempo para concluir a publicação antes da desalocação automática. */
+export function deploymentAt(now = new Date()) {
+  const policy = availabilityAt(now);
+  const parts = Object.fromEntries(
+    formatter.formatToParts(now).map(({ type, value }) => [type, value]),
+  );
+  const minute = Number(parts.hour) * 60 + Number(parts.minute);
+  const allowed =
+    !['Sat', 'Sun'].includes(parts.weekday) &&
+    minute >= AVAILABILITY.startMinute &&
+    minute < AVAILABILITY.deploymentLastStartMinute;
+  return {
+    ...policy,
+    allowed,
+    reason: allowed
+      ? 'Publicação permitida: o processo remoto tem limite de 20 minutos e 60 segundos para encerramento.'
+      : 'Publique de segunda a sexta entre 09h20 e 21h45, antes da margem de desligamento.',
+  };
+}
+
 function main(args) {
+  if (args.length === 1 && args[0] === '--deployment-window') {
+    console.log(JSON.stringify(deploymentAt()));
+    return;
+  }
   if (args.length !== 2 || args[0] !== '--power-state') {
     throw new TypeError(
-      'Uso: node scripts/availability-policy.mjs --power-state PowerState/running',
+      'Uso: node scripts/availability-policy.mjs --power-state PowerState/running | --deployment-window',
     );
   }
   // Não se aceita uma data pela CLI: o workflow sempre avalia o relógio atual.

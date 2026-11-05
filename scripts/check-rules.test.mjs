@@ -88,6 +88,25 @@ test('o hook bloqueia autor ou committer diferente do proprietário', (t) => {
   assert.match(result.stderr, /Committer atual/u);
 });
 
+test('outros commits da interface do GitHub não recebem uma exceção automática', (t) => {
+  const repo = repository(t);
+  repo.git(
+    '-c',
+    'user.name=GitHub',
+    '-c',
+    'user.email=noreply@github.com',
+    'commit',
+    '--allow-empty',
+    '--author=Alexandre Gaia <132020885+coder-gaia@users.noreply.github.com>',
+    '-m',
+    validMessage,
+  );
+  const result = repo.check();
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /autor: identidade/u);
+  assert.match(result.stderr, /committer: identidade/u);
+});
+
 test('mensagens exigem formato completo e rejeitam coautoria e traços proibidos', (t) => {
   const repo = repository(t);
   const invalidMessages = [

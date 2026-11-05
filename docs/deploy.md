@@ -39,7 +39,7 @@ Manter a assinatura sem conversão para pagamento por uso. Quando o crédito ter
 assinatura é desabilitada conforme as
 [condições da oferta](https://azure.microsoft.com/en-us/pricing/offers/ms-azr-0170p/).
 
-A referência de custo consultada em 18/10/2026 para um mês de 730 horas é:
+A referência de custo conferida em 05/11/2026 para um mês de 730 horas é:
 
 | Recurso                             | Referência em US$               |
 | ----------------------------------- | ------------------------------- |
@@ -63,57 +63,70 @@ os containers e o HTTPS. Consultar os
 
 ## Disponibilidade programada
 
-A disponibilidade é programada para reduzir o consumo depois da divulgação.
-O [workflow de disponibilidade](../.github/workflows/availability.yml) aplica a
-[política de horário](../scripts/availability-policy.mjs) em `America/Sao_Paulo`:
+A demonstração tem janela pública prevista de segunda a sexta, das **10h às 22h**, em
+`America/Sao_Paulo`. A VM recebe margens antes e depois dessa janela:
 
-| Período                                         | Estado previsto                                                |
-| ----------------------------------------------- | -------------------------------------------------------------- |
-| Até 25/10/2026 às 22h                           | VM ligada continuamente, inclusive à noite e no fim de semana. |
-| A partir de 26/10, de segunda a sexta, às 08h45 | Início do aquecimento para receber visitas às 9h.              |
-| Dias úteis, das 9h às 22h                       | Janela pública da demonstração.                                |
-| Depois das 22h e aos sábados e domingos         | VM desalocada.                                                 |
+| Período                         | Estado previsto                                                   |
+| ------------------------------- | ----------------------------------------------------------------- |
+| Dias úteis, às 09h20            | Ligar e aguardar a saúde pública da API.                          |
+| Dias úteis, às 09h30 e 09h40    | Conferir novamente e recuperar uma tentativa anterior que falhou. |
+| Dias úteis, das 10h às 22h      | Janela pública prevista.                                          |
+| Todos os dias, às 22h30         | Desalocar e confirmar o estado na Azure.                          |
+| Todos os dias, às 22h40 e 22h50 | Conferir novamente o desligamento.                                |
+| Sábados e domingos              | VM desalocada.                                                    |
 
-O fim da divulgação corresponde a `2026-10-26T01:00:00Z`. Antes desse instante, a política
-nunca solicita desligamento. A ativação deve validar essa fronteira sem antecipar a economia.
-O agendador usa UTC: `45 11 * * 1-5` prepara a abertura e `0 1 * * *` solicita o fechamento;
-`17,47 * * * *` reconcilia atrasos ou execuções perdidas. A decisão usa o horário efetivo da
-execução, após esperar a fila, autenticar e consultar a VM.
+Dois workflows **Azure Logic Apps Consumption** executam a agenda diretamente na Azure,
+sem fila de runners do GitHub e sem depender do computador do proprietário. O template,
+as instruções e os limites estão em [infra/availability](../infra/availability/README.md).
+O gerador usa a [política de horário](../scripts/availability-policy.mjs) do projeto.
 
-Os runners hospedados do GitHub Actions são gratuitos para este repositório público. O cron
-pode atrasar ou perder execuções e não oferece SLA. Em repositórios públicos, o agendamento
-pode ser desativado após 60 dias sem atividade e precisa ser reativado. A antecedência de
-15 minutos e a reconciliação reduzem esse efeito, mas não garantem abertura no minuto exato.
+A agenda anterior usava o cron do GitHub. A auditoria de 26/10 a 04/11 encontrou oito
+inicializações automáticas depois das 9h, chegando a uma primeira readiness às 14h03.
+Por isso, o GitHub deixou de controlar automaticamente a energia. O
+[workflow de disponibilidade](../.github/workflows/availability.yml) permanece apenas
+como recuperação manual. A recorrência nativa também está sujeita a falhas do provedor;
+os disparos adicionais e as margens reduzem o risco, sem garantir disponibilidade absoluta.
 
 ### Identidade e execução manual
 
-A autenticação Azure usa OIDC, sem senha ou client secret. As ações externas ficam fixadas
-por SHA de commit. A credencial federada deve aceitar somente o subject imutável
+Cada Logic App usa sua própria identidade gerenciada, sem senha ou chave. As duas identidades
+recebem exclusivamente estas ações, atribuídas no escopo da VM `bora-prod`:
+
+```text
+Microsoft.Compute/virtualMachines/read
+Microsoft.Compute/virtualMachines/instanceView/read
+Microsoft.Compute/virtualMachines/start/action
+Microsoft.Compute/virtualMachines/deallocate/action
+```
+
+O template cria os workflows desabilitados. Validar a definição no ARM, conferir os papéis e
+testar disparo, relógio e readiness antes de habilitar os horários definitivos. Os POSTs não
+seguem automaticamente a operação assíncrona ARM; a confirmação consulta o `instanceView`
+da própria VM, mantendo as permissões restritas. O histórico é retido por sete dias.
+
+O fluxo manual do GitHub preserva OIDC. As ações externas ficam fixadas por SHA de commit.
+A credencial federada deve aceitar somente o subject imutável
 `repo:coder-gaia@<owner_id>/BORA@<repo_id>:ref:refs/heads/main`, com issuer
 `https://token.actions.githubusercontent.com` e audience `api://AzureADTokenExchange`.
 Obtenha `owner_id` e `repo_id` pela API pública do repositório. Esses IDs vinculam a confiança
 ao proprietário e ao repositório originais, protegendo contra recriações ou transferências.
-Valide o claim `sub` atual antes de configurar a federação. Configure as repository variables
-`BORA_AZURE_CLIENT_ID`, `BORA_AZURE_TENANT_ID` e `BORA_AZURE_SUBSCRIPTION_ID`; são identificadores,
-não senhas. O RBAC customizado deve ficar restrito ao recurso da VM `bora-prod`, com apenas:
+Valide o claim `sub` atual antes de configurar a federação. As repository variables
+`BORA_AZURE_CLIENT_ID`, `BORA_AZURE_TENANT_ID` e `BORA_AZURE_SUBSCRIPTION_ID` são identificadores.
+O papel dessa identidade tem as mesmas quatro ações, restritas à mesma VM.
 
-- `Microsoft.Compute/virtualMachines/read`
-- `Microsoft.Compute/virtualMachines/instanceView/read`
-- `Microsoft.Compute/virtualMachines/start/action`
-- `Microsoft.Compute/virtualMachines/deallocate/action`
+Recuperação manual e publicação compartilham o grupo `bora-production`, com
+`cancel-in-progress: false` e `queue: max`. Em `workflow_dispatch`, `dry_run` é `true` por
+padrão. Para aplicar a política atual, executar com `dry_run: false`; isso não cria uma
+exceção permanente de funcionamento. Não reativar o cron antigo junto ao Logic Apps.
 
-Disponibilidade e publicação devem compartilhar o grupo `bora-production`, com
-`cancel-in-progress: false` e `queue: max`, preservando as publicações pendentes e evitando
-alterações simultâneas de energia e deploy. Em `workflow_dispatch`, `dry_run` é `true` por
-padrão: consulta o estado e mostra o plano sem alterar a energia. Para reconciliar efetivamente,
-execute manualmente com `dry_run: false`; isso aplica o horário atual, sem criar uma exceção
-permanente de funcionamento.
+A agenda da Azure não compartilha a fila do GitHub. Para proteger a publicação, o runner
+e o [wrapper remoto](../infra/deploy/scheduled-deploy.sh) conferem o relógio efetivo e aceitam
+início somente em dias úteis, de 09h20 até antes de 21h45. O processo remoto inteiro,
+incluindo recuperação, recebe limite de 20 minutos e mais 60 segundos para encerramento.
+O job tem limite de 25 minutos. Não há publicação perto do desligamento das 22h30.
 
-Uma publicação manual fora do expediente exige ligar a VM como exceção administrativa antes
-do deploy. A próxima reconciliação volta ao estado previsto pelo horário; a intervenção não
-suspende a política. Desalocar preserva o IPv4 estático, discos, volumes, dados e arquivos
-persistidos de TLS do Caddy. Após iniciar a VM, o workflow aguarda a readiness HTTP com estado
-`UP`: o grafo e o banco precisam estar prontos antes de considerar a demonstração disponível.
+Desalocar preserva o IPv4 estático, discos, volumes, dados e arquivos de TLS do Caddy. Depois
+de iniciar, somente HTTP 200 e `status: UP` na readiness confirmam saúde da aplicação.
 
 No plano Free do UptimeRobot, as pausas programadas aparecem como DOWN. Não há manutenção
 automática configurada para ocultá-las; esses intervalos precisam ser considerados ao ler
@@ -121,12 +134,26 @@ o histórico de disponibilidade.
 
 ### Estimativa de economia
 
-Usando os preços de referência acima e a base de 730 horas por mês, a janela das 9h às 22h
-de segunda a sexta resulta em aproximadamente US$ 29,72 mensais, contra US$ 62,66 com a VM
-continuamente ligada. Disco e IPv4 permanecem na conta mesmo com a VM desalocada. A estimativa
-exclui o aquecimento antecipado, atrasos do agendador, operações de disco e tráfego; esses itens
-podem elevar o total. O saldo real do crédito estudantil não foi apurado, portanto essa conta
-não determina por quanto tempo a assinatura permanecerá disponível.
+Com 22 dias úteis das 09h20 às 22h30, a VM acumula 289h40 no mês. Pelos preços conferidos em
+05/11/2026, a base é **US$ 30,25 mensais**: US$ 21,32 de computação, US$ 5,28 de disco e
+US$ 3,65 de IPv4 na referência de 730 horas. A conta exclui operações de disco, tráfego,
+backups e duração adicional até a desalocação. A quantidade real de dias úteis varia.
+
+Azure for Students inclui 4.000 operações internas mensais no Logic Apps Consumption,
+compartilhadas pela assinatura. O desenho estima 3.027 em um mês conservador de 31 dias
+e 23 dias úteis, com partidas normais e consultas adicionais. Falhas prolongadas podem
+chegar ao envelope de 14.886 ações. O excedente custa US$ 0,000025 por operação no preço
+consultado, cerca de US$ 0,28 nesse envelope sem outros Logic Apps.
+
+A retenção do histórico é cobrada separadamente a US$ 0,12/GB-mês. Como referência de escala,
+10 MB retidos durante um mês inteiro custariam US$ 0,0012. Isso é uma hipótese de volume,
+não uma medição. Conferir o consumo após a ativação: [benefícios estudantis](https://azure.microsoft.com/en-us/free/students/),
+[tarifação Logic Apps](https://learn.microsoft.com/en-us/azure/logic-apps/logic-apps-pricing) e
+[preços](https://azure.microsoft.com/en-us/pricing/details/logic-apps/).
+
+Manter o limite de gastos ligado e a assinatura estudantil, sem conversão para pagamento
+conforme uso. O saldo real não foi apurado; essa estimativa não determina a duração restante
+dos créditos.
 
 ## Preparar a VM
 

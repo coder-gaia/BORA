@@ -1,0 +1,862 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "namePrefix": {
+      "type": "string",
+      "defaultValue": "bora-availability",
+      "minLength": 3,
+      "maxLength": 60
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]"
+    },
+    "vmResourceId": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "ID ARM completo da única VM que as identidades gerenciadas poderão controlar."
+      }
+    },
+    "roleDefinitionId": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "ID ARM do papel existente, limitado a read, instanceView/read, start/action e deallocate/action da VM."
+      }
+    },
+    "readinessUrl": {
+      "type": "string",
+      "defaultValue": "https://bora.alexandregaia.me/actuator/health/readiness"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[concat(parameters('namePrefix'), '-start')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "tags": {
+        "project": "bora",
+        "purpose": "availability"
+      },
+      "properties": {
+        "state": "Disabled",
+        "runtimeConfiguration": {
+          "lifetime": {
+            "unit": "day",
+            "count": 7
+          }
+        },
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "vmResourceId": {
+              "type": "String"
+            },
+            "readinessUrl": {
+              "type": "String"
+            },
+            "timeZone": {
+              "type": "String",
+              "defaultValue": "E. South America Standard Time"
+            },
+            "startHhmm": {
+              "type": "Int",
+              "defaultValue": 920
+            },
+            "stopHhmm": {
+              "type": "Int",
+              "defaultValue": 2230
+            },
+            "computeApiVersion": {
+              "type": "String",
+              "defaultValue": "2025-11-01"
+            }
+          },
+          "triggers": {
+            "Native_schedule": {
+              "type": "Recurrence",
+              "recurrence": {
+                "frequency": "Week",
+                "interval": 1,
+                "timeZone": "E. South America Standard Time",
+                "startTime": "2020-01-01T00:00:00",
+                "schedule": {
+                  "weekDays": [
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday"
+                  ],
+                  "hours": [
+                    9
+                  ],
+                  "minutes": [
+                    20,
+                    30,
+                    40
+                  ]
+                }
+              },
+              "runtimeConfiguration": {
+                "concurrency": {
+                  "runs": 1
+                }
+              }
+            }
+          },
+          "actions": {
+            "Initialize_control_state": {
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "powerState",
+                    "type": "string",
+                    "value": "unknown"
+                  },
+                  {
+                    "name": "ready",
+                    "type": "boolean",
+                    "value": false
+                  }
+                ]
+              },
+              "runAfter": {}
+            },
+            "Check_current_time_window": {
+              "type": "If",
+              "expression": "@and(contains(createArray(1,2,3,4,5),dayOfWeek(convertTimeZone(utcNow(),'UTC',parameters('timeZone')))),greaterOrEquals(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('startHhmm')),less(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('stopHhmm')))",
+              "actions": {
+                "Initial_instance_view": {
+                  "type": "Http",
+                  "inputs": {
+                    "method": "GET",
+                    "uri": "@concat('https://management.azure.com',parameters('vmResourceId'),'/instanceView?api-version=',parameters('computeApiVersion'))",
+                    "authentication": {
+                      "type": "ManagedServiceIdentity",
+                      "audience": "https://management.azure.com/"
+                    },
+                    "retryPolicy": {
+                      "type": "none"
+                    }
+                  },
+                  "operationOptions": "DisableAsyncPattern",
+                  "runAfter": {}
+                },
+                "Initial_power_status": {
+                  "type": "Query",
+                  "inputs": {
+                    "from": "@coalesce(body('Initial_instance_view')?['statuses'],json('[]'))",
+                    "where": "@startsWith(coalesce(item()?['code'],''),'PowerState/')"
+                  },
+                  "runAfter": {
+                    "Initial_instance_view": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Initial_remember_power_state": {
+                  "type": "SetVariable",
+                  "inputs": {
+                    "name": "powerState",
+                    "value": "@coalesce(body('Initial_power_status')?[0]?['code'],'unknown')"
+                  },
+                  "runAfter": {
+                    "Initial_power_status": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Reject_unknown_power_state": {
+                  "type": "If",
+                  "expression": "@not(contains(createArray('PowerState/running','PowerState/stopped','PowerState/deallocated','PowerState/starting','PowerState/stopping','PowerState/deallocating'),variables('powerState')))",
+                  "actions": {
+                    "Unknown_power_state": {
+                      "type": "Terminate",
+                      "inputs": {
+                        "runStatus": "Failed",
+                        "runError": {
+                          "code": "UnknownPowerState",
+                          "message": "A Azure não informou um estado de energia conhecido; nenhuma alteração foi solicitada."
+                        }
+                      },
+                      "runAfter": {}
+                    }
+                  },
+                  "else": {
+                    "actions": {}
+                  },
+                  "runAfter": {
+                    "Initial_remember_power_state": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Change_power_only_if_needed": {
+                  "type": "If",
+                  "expression": "@not(equals(variables('powerState'),'PowerState/running'))",
+                  "actions": {
+                    "Check_time_immediately_before_POST": {
+                      "type": "If",
+                      "expression": "@and(and(contains(createArray(1,2,3,4,5),dayOfWeek(convertTimeZone(utcNow(),'UTC',parameters('timeZone')))),greaterOrEquals(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('startHhmm')),less(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('stopHhmm'))),contains(createArray('PowerState/running','PowerState/stopped','PowerState/deallocated'),variables('powerState')))",
+                      "actions": {
+                        "Request_VM_power_change": {
+                          "type": "Http",
+                          "inputs": {
+                            "method": "POST",
+                            "uri": "@concat('https://management.azure.com',parameters('vmResourceId'),'/start?api-version=',parameters('computeApiVersion'))",
+                            "authentication": {
+                              "type": "ManagedServiceIdentity",
+                              "audience": "https://management.azure.com/"
+                            },
+                            "retryPolicy": {
+                              "type": "none"
+                            }
+                          },
+                          "operationOptions": "DisableAsyncPattern",
+                          "runAfter": {}
+                        }
+                      },
+                      "else": {
+                        "actions": {}
+                      },
+                      "runAfter": {}
+                    },
+                    "Wait_for_confirmed_power_state": {
+                      "type": "Until",
+                      "expression": "@or(equals(variables('powerState'),'PowerState/running'),not(and(contains(createArray(1,2,3,4,5),dayOfWeek(convertTimeZone(utcNow(),'UTC',parameters('timeZone')))),greaterOrEquals(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('startHhmm')),less(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('stopHhmm')))))",
+                      "limit": {
+                        "count": 12,
+                        "timeout": "PT3M"
+                      },
+                      "operationOptions": "FailWhenLimitsReached",
+                      "actions": {
+                        "Poll_instance_view": {
+                          "type": "Http",
+                          "inputs": {
+                            "method": "GET",
+                            "uri": "@concat('https://management.azure.com',parameters('vmResourceId'),'/instanceView?api-version=',parameters('computeApiVersion'))",
+                            "authentication": {
+                              "type": "ManagedServiceIdentity",
+                              "audience": "https://management.azure.com/"
+                            },
+                            "retryPolicy": {
+                              "type": "none"
+                            }
+                          },
+                          "operationOptions": "DisableAsyncPattern",
+                          "runAfter": {}
+                        },
+                        "Poll_power_status": {
+                          "type": "Query",
+                          "inputs": {
+                            "from": "@coalesce(body('Poll_instance_view')?['statuses'],json('[]'))",
+                            "where": "@startsWith(coalesce(item()?['code'],''),'PowerState/')"
+                          },
+                          "runAfter": {
+                            "Poll_instance_view": [
+                              "Succeeded"
+                            ]
+                          }
+                        },
+                        "Poll_remember_power_state": {
+                          "type": "SetVariable",
+                          "inputs": {
+                            "name": "powerState",
+                            "value": "@coalesce(body('Poll_power_status')?[0]?['code'],'unknown')"
+                          },
+                          "runAfter": {
+                            "Poll_power_status": [
+                              "Succeeded"
+                            ]
+                          }
+                        },
+                        "Delay_before_power_retry": {
+                          "type": "If",
+                          "expression": "@and(not(equals(variables('powerState'),'PowerState/running')),and(contains(createArray(1,2,3,4,5),dayOfWeek(convertTimeZone(utcNow(),'UTC',parameters('timeZone')))),greaterOrEquals(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('startHhmm')),less(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('stopHhmm'))))",
+                          "actions": {
+                            "Poll_remember_power_state_wait": {
+                              "type": "Wait",
+                              "inputs": {
+                                "interval": {
+                                  "count": 15,
+                                  "unit": "Second"
+                                }
+                              },
+                              "runAfter": {}
+                            }
+                          },
+                          "else": {
+                            "actions": {}
+                          },
+                          "runAfter": {
+                            "Poll_remember_power_state": [
+                              "Succeeded"
+                            ]
+                          }
+                        }
+                      },
+                      "runAfter": {
+                        "Check_time_immediately_before_POST": [
+                          "Succeeded"
+                        ]
+                      }
+                    }
+                  },
+                  "else": {
+                    "actions": {}
+                  },
+                  "runAfter": {
+                    "Reject_unknown_power_state": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Confirm_target_before_followup": {
+                  "type": "If",
+                  "expression": "@and(equals(variables('powerState'),'PowerState/running'),and(contains(createArray(1,2,3,4,5),dayOfWeek(convertTimeZone(utcNow(),'UTC',parameters('timeZone')))),greaterOrEquals(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('startHhmm')),less(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('stopHhmm'))))",
+                  "actions": {
+                    "Wait_for_public_readiness": {
+                      "type": "Until",
+                      "expression": "@or(variables('ready'),not(and(contains(createArray(1,2,3,4,5),dayOfWeek(convertTimeZone(utcNow(),'UTC',parameters('timeZone')))),greaterOrEquals(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('startHhmm')),less(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('stopHhmm')))))",
+                      "limit": {
+                        "count": 8,
+                        "timeout": "PT2M"
+                      },
+                      "operationOptions": "FailWhenLimitsReached",
+                      "actions": {
+                        "Probe_public_readiness": {
+                          "type": "Http",
+                          "inputs": {
+                            "method": "GET",
+                            "uri": "@parameters('readinessUrl')",
+                            "retryPolicy": {
+                              "type": "none"
+                            }
+                          },
+                          "operationOptions": "DisableAsyncPattern",
+                          "runAfter": {}
+                        },
+                        "Record_probe_result": {
+                          "type": "If",
+                          "expression": "@equals(outputs('Probe_public_readiness')?['statusCode'],200)",
+                          "actions": {
+                            "Record_json_health": {
+                              "type": "SetVariable",
+                              "inputs": {
+                                "name": "ready",
+                                "value": "@equals(body('Probe_public_readiness')?['status'],'UP')"
+                              },
+                              "runAfter": {}
+                            }
+                          },
+                          "else": {
+                            "actions": {
+                              "Record_unavailable": {
+                                "type": "SetVariable",
+                                "inputs": {
+                                  "name": "ready",
+                                  "value": false
+                                },
+                                "runAfter": {}
+                              }
+                            }
+                          },
+                          "runAfter": {
+                            "Probe_public_readiness": [
+                              "Succeeded",
+                              "Failed",
+                              "TimedOut"
+                            ]
+                          }
+                        },
+                        "Delay_before_readiness_retry": {
+                          "type": "If",
+                          "expression": "@and(not(variables('ready')),and(contains(createArray(1,2,3,4,5),dayOfWeek(convertTimeZone(utcNow(),'UTC',parameters('timeZone')))),greaterOrEquals(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('startHhmm')),less(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('stopHhmm'))))",
+                          "actions": {
+                            "Record_probe_result_wait": {
+                              "type": "Wait",
+                              "inputs": {
+                                "interval": {
+                                  "count": 15,
+                                  "unit": "Second"
+                                }
+                              },
+                              "runAfter": {}
+                            }
+                          },
+                          "else": {
+                            "actions": {}
+                          },
+                          "runAfter": {
+                            "Record_probe_result": [
+                              "Succeeded"
+                            ]
+                          }
+                        }
+                      },
+                      "runAfter": {}
+                    },
+                    "Confirm_public_readiness": {
+                      "type": "If",
+                      "expression": "@variables('ready')",
+                      "actions": {
+                        "Public_readiness_confirmed": {
+                          "type": "Compose",
+                          "inputs": {
+                            "status": "UP",
+                            "checkedAt": "@utcNow()",
+                            "url": "@parameters('readinessUrl')"
+                          },
+                          "runAfter": {}
+                        }
+                      },
+                      "else": {
+                        "actions": {
+                          "Readiness_window_expired": {
+                            "type": "Compose",
+                            "inputs": "A janela terminou antes da confirmação de saúde; não foi confirmado UP.",
+                            "runAfter": {}
+                          }
+                        }
+                      },
+                      "runAfter": {
+                        "Wait_for_public_readiness": [
+                          "Succeeded"
+                        ]
+                      }
+                    }
+                  },
+                  "else": {
+                    "actions": {
+                      "Current_window_has_changed": {
+                        "type": "Compose",
+                        "inputs": "A janela atual mudou durante a execução. Nenhuma nova alteração de energia será solicitada.",
+                        "runAfter": {}
+                      }
+                    }
+                  },
+                  "runAfter": {
+                    "Change_power_only_if_needed": [
+                      "Succeeded"
+                    ]
+                  }
+                }
+              },
+              "else": {
+                "actions": {
+                  "Ignore_outdated_schedule": {
+                    "type": "Compose",
+                    "inputs": "Execução fora da janela atual desta operação; nenhum recurso foi alterado.",
+                    "runAfter": {}
+                  }
+                }
+              },
+              "runAfter": {
+                "Initialize_control_state": [
+                  "Succeeded"
+                ]
+              }
+            }
+          },
+          "outputs": {}
+        },
+        "parameters": {
+          "vmResourceId": {
+            "value": "[parameters('vmResourceId')]"
+          },
+          "readinessUrl": {
+            "value": "[parameters('readinessUrl')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[concat(parameters('namePrefix'), '-stop')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "tags": {
+        "project": "bora",
+        "purpose": "availability"
+      },
+      "properties": {
+        "state": "Disabled",
+        "runtimeConfiguration": {
+          "lifetime": {
+            "unit": "day",
+            "count": 7
+          }
+        },
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "vmResourceId": {
+              "type": "String"
+            },
+            "readinessUrl": {
+              "type": "String"
+            },
+            "timeZone": {
+              "type": "String",
+              "defaultValue": "E. South America Standard Time"
+            },
+            "startHhmm": {
+              "type": "Int",
+              "defaultValue": 920
+            },
+            "stopHhmm": {
+              "type": "Int",
+              "defaultValue": 2230
+            },
+            "computeApiVersion": {
+              "type": "String",
+              "defaultValue": "2025-11-01"
+            }
+          },
+          "triggers": {
+            "Native_schedule": {
+              "type": "Recurrence",
+              "recurrence": {
+                "frequency": "Day",
+                "interval": 1,
+                "timeZone": "E. South America Standard Time",
+                "startTime": "2020-01-01T00:00:00",
+                "schedule": {
+                  "hours": [
+                    22
+                  ],
+                  "minutes": [
+                    30,
+                    40,
+                    50
+                  ]
+                }
+              },
+              "runtimeConfiguration": {
+                "concurrency": {
+                  "runs": 1
+                }
+              }
+            }
+          },
+          "actions": {
+            "Initialize_control_state": {
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "powerState",
+                    "type": "string",
+                    "value": "unknown"
+                  }
+                ]
+              },
+              "runAfter": {}
+            },
+            "Check_current_time_window": {
+              "type": "If",
+              "expression": "@not(and(contains(createArray(1,2,3,4,5),dayOfWeek(convertTimeZone(utcNow(),'UTC',parameters('timeZone')))),greaterOrEquals(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('startHhmm')),less(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('stopHhmm'))))",
+              "actions": {
+                "Initial_instance_view": {
+                  "type": "Http",
+                  "inputs": {
+                    "method": "GET",
+                    "uri": "@concat('https://management.azure.com',parameters('vmResourceId'),'/instanceView?api-version=',parameters('computeApiVersion'))",
+                    "authentication": {
+                      "type": "ManagedServiceIdentity",
+                      "audience": "https://management.azure.com/"
+                    },
+                    "retryPolicy": {
+                      "type": "none"
+                    }
+                  },
+                  "operationOptions": "DisableAsyncPattern",
+                  "runAfter": {}
+                },
+                "Initial_power_status": {
+                  "type": "Query",
+                  "inputs": {
+                    "from": "@coalesce(body('Initial_instance_view')?['statuses'],json('[]'))",
+                    "where": "@startsWith(coalesce(item()?['code'],''),'PowerState/')"
+                  },
+                  "runAfter": {
+                    "Initial_instance_view": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Initial_remember_power_state": {
+                  "type": "SetVariable",
+                  "inputs": {
+                    "name": "powerState",
+                    "value": "@coalesce(body('Initial_power_status')?[0]?['code'],'unknown')"
+                  },
+                  "runAfter": {
+                    "Initial_power_status": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Reject_unknown_power_state": {
+                  "type": "If",
+                  "expression": "@not(contains(createArray('PowerState/running','PowerState/stopped','PowerState/deallocated','PowerState/starting','PowerState/stopping','PowerState/deallocating'),variables('powerState')))",
+                  "actions": {
+                    "Unknown_power_state": {
+                      "type": "Terminate",
+                      "inputs": {
+                        "runStatus": "Failed",
+                        "runError": {
+                          "code": "UnknownPowerState",
+                          "message": "A Azure não informou um estado de energia conhecido; nenhuma alteração foi solicitada."
+                        }
+                      },
+                      "runAfter": {}
+                    }
+                  },
+                  "else": {
+                    "actions": {}
+                  },
+                  "runAfter": {
+                    "Initial_remember_power_state": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Change_power_only_if_needed": {
+                  "type": "If",
+                  "expression": "@not(equals(variables('powerState'),'PowerState/deallocated'))",
+                  "actions": {
+                    "Check_time_immediately_before_POST": {
+                      "type": "If",
+                      "expression": "@and(not(and(contains(createArray(1,2,3,4,5),dayOfWeek(convertTimeZone(utcNow(),'UTC',parameters('timeZone')))),greaterOrEquals(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('startHhmm')),less(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('stopHhmm')))),contains(createArray('PowerState/running','PowerState/stopped','PowerState/deallocated'),variables('powerState')))",
+                      "actions": {
+                        "Request_VM_power_change": {
+                          "type": "Http",
+                          "inputs": {
+                            "method": "POST",
+                            "uri": "@concat('https://management.azure.com',parameters('vmResourceId'),'/deallocate?api-version=',parameters('computeApiVersion'))",
+                            "authentication": {
+                              "type": "ManagedServiceIdentity",
+                              "audience": "https://management.azure.com/"
+                            },
+                            "retryPolicy": {
+                              "type": "none"
+                            }
+                          },
+                          "operationOptions": "DisableAsyncPattern",
+                          "runAfter": {}
+                        }
+                      },
+                      "else": {
+                        "actions": {}
+                      },
+                      "runAfter": {}
+                    },
+                    "Wait_for_confirmed_power_state": {
+                      "type": "Until",
+                      "expression": "@or(equals(variables('powerState'),'PowerState/deallocated'),not(not(and(contains(createArray(1,2,3,4,5),dayOfWeek(convertTimeZone(utcNow(),'UTC',parameters('timeZone')))),greaterOrEquals(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('startHhmm')),less(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('stopHhmm'))))))",
+                      "limit": {
+                        "count": 12,
+                        "timeout": "PT3M"
+                      },
+                      "operationOptions": "FailWhenLimitsReached",
+                      "actions": {
+                        "Poll_instance_view": {
+                          "type": "Http",
+                          "inputs": {
+                            "method": "GET",
+                            "uri": "@concat('https://management.azure.com',parameters('vmResourceId'),'/instanceView?api-version=',parameters('computeApiVersion'))",
+                            "authentication": {
+                              "type": "ManagedServiceIdentity",
+                              "audience": "https://management.azure.com/"
+                            },
+                            "retryPolicy": {
+                              "type": "none"
+                            }
+                          },
+                          "operationOptions": "DisableAsyncPattern",
+                          "runAfter": {}
+                        },
+                        "Poll_power_status": {
+                          "type": "Query",
+                          "inputs": {
+                            "from": "@coalesce(body('Poll_instance_view')?['statuses'],json('[]'))",
+                            "where": "@startsWith(coalesce(item()?['code'],''),'PowerState/')"
+                          },
+                          "runAfter": {
+                            "Poll_instance_view": [
+                              "Succeeded"
+                            ]
+                          }
+                        },
+                        "Poll_remember_power_state": {
+                          "type": "SetVariable",
+                          "inputs": {
+                            "name": "powerState",
+                            "value": "@coalesce(body('Poll_power_status')?[0]?['code'],'unknown')"
+                          },
+                          "runAfter": {
+                            "Poll_power_status": [
+                              "Succeeded"
+                            ]
+                          }
+                        },
+                        "Delay_before_power_retry": {
+                          "type": "If",
+                          "expression": "@and(not(equals(variables('powerState'),'PowerState/deallocated')),not(and(contains(createArray(1,2,3,4,5),dayOfWeek(convertTimeZone(utcNow(),'UTC',parameters('timeZone')))),greaterOrEquals(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('startHhmm')),less(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('stopHhmm')))))",
+                          "actions": {
+                            "Poll_remember_power_state_wait": {
+                              "type": "Wait",
+                              "inputs": {
+                                "interval": {
+                                  "count": 15,
+                                  "unit": "Second"
+                                }
+                              },
+                              "runAfter": {}
+                            }
+                          },
+                          "else": {
+                            "actions": {}
+                          },
+                          "runAfter": {
+                            "Poll_remember_power_state": [
+                              "Succeeded"
+                            ]
+                          }
+                        }
+                      },
+                      "runAfter": {
+                        "Check_time_immediately_before_POST": [
+                          "Succeeded"
+                        ]
+                      }
+                    }
+                  },
+                  "else": {
+                    "actions": {}
+                  },
+                  "runAfter": {
+                    "Reject_unknown_power_state": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Confirm_target_before_followup": {
+                  "type": "If",
+                  "expression": "@and(equals(variables('powerState'),'PowerState/deallocated'),not(and(contains(createArray(1,2,3,4,5),dayOfWeek(convertTimeZone(utcNow(),'UTC',parameters('timeZone')))),greaterOrEquals(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('startHhmm')),less(int(convertTimeZone(utcNow(),'UTC',parameters('timeZone'),'HHmm')),parameters('stopHhmm')))))",
+                  "actions": {
+                    "Deallocation_confirmed": {
+                      "type": "Compose",
+                      "inputs": {
+                        "powerState": "PowerState/deallocated",
+                        "checkedAt": "@utcNow()"
+                      },
+                      "runAfter": {}
+                    }
+                  },
+                  "else": {
+                    "actions": {
+                      "Current_window_has_changed": {
+                        "type": "Compose",
+                        "inputs": "A janela atual mudou durante a execução. Nenhuma nova alteração de energia será solicitada.",
+                        "runAfter": {}
+                      }
+                    }
+                  },
+                  "runAfter": {
+                    "Change_power_only_if_needed": [
+                      "Succeeded"
+                    ]
+                  }
+                }
+              },
+              "else": {
+                "actions": {
+                  "Ignore_outdated_schedule": {
+                    "type": "Compose",
+                    "inputs": "Execução fora da janela atual desta operação; nenhum recurso foi alterado.",
+                    "runAfter": {}
+                  }
+                }
+              },
+              "runAfter": {
+                "Initialize_control_state": [
+                  "Succeeded"
+                ]
+              }
+            }
+          },
+          "outputs": {}
+        },
+        "parameters": {
+          "vmResourceId": {
+            "value": "[parameters('vmResourceId')]"
+          },
+          "readinessUrl": {
+            "value": "[parameters('readinessUrl')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(parameters('vmResourceId'), resourceId('Microsoft.Logic/workflows', concat(parameters('namePrefix'), '-start')), parameters('roleDefinitionId'))]",
+      "scope": "[parameters('vmResourceId')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Logic/workflows', concat(parameters('namePrefix'), '-start'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[parameters('roleDefinitionId')]",
+        "principalId": "[reference(resourceId('Microsoft.Logic/workflows', concat(parameters('namePrefix'), '-start')), '2019-05-01', 'Full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(parameters('vmResourceId'), resourceId('Microsoft.Logic/workflows', concat(parameters('namePrefix'), '-stop')), parameters('roleDefinitionId'))]",
+      "scope": "[parameters('vmResourceId')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Logic/workflows', concat(parameters('namePrefix'), '-stop'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[parameters('roleDefinitionId')]",
+        "principalId": "[reference(resourceId('Microsoft.Logic/workflows', concat(parameters('namePrefix'), '-stop')), '2019-05-01', 'Full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    }
+  ],
+  "outputs": {
+    "startWorkflowId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Logic/workflows', concat(parameters('namePrefix'), '-start'))]"
+    },
+    "startPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Logic/workflows', concat(parameters('namePrefix'), '-start')), '2019-05-01', 'Full').identity.principalId]"
+    },
+    "stopWorkflowId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Logic/workflows', concat(parameters('namePrefix'), '-stop'))]"
+    },
+    "stopPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Logic/workflows', concat(parameters('namePrefix'), '-stop')), '2019-05-01', 'Full').identity.principalId]"
+    }
+  }
+}
