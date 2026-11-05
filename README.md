@@ -8,7 +8,7 @@ cada etapa até a entrega. A demonstração mantém 120 entregadores e 40 lojas 
 **[Como funciona](https://bora.alexandregaia.me/como-funciona)**
 
 Disponibilidade programada: continuamente até 25/10/2026, às 22h; a partir de 26/10,
-de segunda a sexta, das 9h às 22h, no horário de Brasília.
+de segunda a sexta, das 10h às 22h, no horário de Brasília.
 
 ![Visão geral da operação, com indicadores e entregadores no mapa de São Paulo](docs/imagens/operacao.png)
 
